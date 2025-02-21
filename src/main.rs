@@ -27,7 +27,6 @@ use std::io::{self, IsTerminal};
               # Combine multiple filters
               openapiv3-filter api.json --path '/api/v1/*' --method post --tag admin"
 )]
-
 /// Filters document by matching specification paths
 struct Opts {
         #[arg(help = "Input file or - for stdin", default_value = "-")]
@@ -78,39 +77,32 @@ impl Opts {
 fn main() -> ExitCode {
 
     // Use our custom parse_args instead of the default parse()
-        let opts = Opts::parse_args().expect("Argument parsing failed");
+    let opts = Opts::parse_args().expect("Argument parsing failed");
 
-match opts {
-    Opts {
-        api_document,
-        path_names,
-        http_methods,
-        tags,
-        security
-        } =>{
-        let document: Result<ParsedType<OpenAPI>,Box<dyn (std::error::Error)>> = parser::parse_document(&api_document.expect("Could not parse input document paremeter"));
+
+    let Opts { api_document, path_names, http_methods, tags, security } = opts;
+        let document: Result<ParsedType<OpenAPI>,Box<dyn (std::error::Error)>> =
+            parser::parse_document(&api_document.expect("Could not parse input document paremeter"));
         match document {
             Ok(openapi) => {
                     match openapi {
-                        ParsedType::JSON(val) => {
+                        ParsedType::Json(val) => {
                             let res =val.filter_by_parameters(FilteringParameters{
                                 paths:(path_names).clone(),
                                 methods:(http_methods).clone(),
                                 tags:(tags).clone(),
-                                security:(security),
-                                ..Default::default()
+                                security:(security)
                             });
                             let text_res = serde_json::to_string(&res.unwrap()).unwrap();
                             println!("{}",text_res);
                             ExitCode::SUCCESS
                         },
-                        ParsedType:: YAML(val) => {
+                        ParsedType:: Yaml(val) => {
                             let res =val.filter_by_parameters(FilteringParameters{
                                 paths:(path_names).clone(),
                                 methods:(http_methods).clone(),
                                 tags:(tags).clone(),
-                                security:(security),
-                                ..Default::default()
+                                security:(security)
                             });
                             let text_res = serde_yaml::to_string(&res.unwrap()).unwrap();
                             println!("{}", text_res);
@@ -120,11 +112,8 @@ match opts {
 
             }
             Err(error) => {
-                        println!("{}",error.to_string());
+                        println!("{}",error);
                         ExitCode::FAILURE
             }
         }
     }
-}
-
-}

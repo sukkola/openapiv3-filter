@@ -454,8 +454,8 @@ fn clone_operation(operation:&Operation,allowed_tags: &HashSet<String>,allowed_s
 
         fn extract_content<T>(parsed: ParsedType<T>) -> T {
             match parsed {
-                ParsedType::JSON(content) => content,
-                ParsedType::YAML(content) => content,
+                ParsedType::Json(content) => content,
+                ParsedType::Yaml(content) => content,
             }
         }
     }

@@ -6,8 +6,8 @@ use serde_yaml::Value as YamlValue;
 
 #[derive(Debug)]
 pub enum ParsedType<T>{
-    JSON(T),
-    YAML(T)
+    Json(T),
+    Yaml(T)
 }
 
 /// Reads the contents of a file into a String.
@@ -97,10 +97,10 @@ fn wrap_response_type<T>(response:T,file_name:&str,default_type:&str,input:&str)
             detect_format(input)
         };
     match file_postfix {
-        Some("yml")  => {ParsedType::YAML(response)},
-        Some("yaml") => {ParsedType::YAML(response)},
-        Some("json") => {ParsedType::JSON(response)},
-        _ =>{ParsedType::YAML(response)}
+        Some("yml")  => {ParsedType::Yaml(response)},
+        Some("yaml") => {ParsedType::Yaml(response)},
+        Some("json") => {ParsedType::Json(response)},
+        _ =>{ParsedType::Yaml(response)}
     }
 }
 

@@ -130,7 +130,7 @@ mod tests {
          map.insert("E".to_string(), vec!["F".to_string()]); // Unrelated component
          map.insert("F".to_string(), vec!["G".to_string()]);
          map.insert("G".to_string(), vec![]);
-         let result = get_kept_references(&map,&vec![String::from("E"),String::from("D")].iter().map(|item|item.clone()).collect::<HashSet<_>>());
+         let result = get_kept_references(&map,&[String::from("E"),String::from("D")].iter().cloned().collect::<HashSet<_>>());
 
         assert_eq!(result.len(), 4 );
         assert!(result.contains("D"));
