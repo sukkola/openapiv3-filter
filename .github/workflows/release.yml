@@ -61,14 +61,13 @@ jobs:
           cp target/${{ matrix.target }}/release/openapiv3-filter target/release/bin/openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}
           tar czvf openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C target/release bin/openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}
         shell: bash
-      - name: Generate Changelog
-        uses: charmbracelet/glow-action@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: |
-            openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+      - name: Calculate checksums
+        run: |
+          sha256sum "openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" > "openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256"
+          echo "checksums: \n$(ls openapiv3-filter-*.sha256)"
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
             openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+            openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256
