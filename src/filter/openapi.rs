@@ -4,12 +4,11 @@ use wildmatch::WildMatch;
 use std::collections::{HashMap,HashSet};
 use serde_json::json;
 
-
-mod json_path_filter;
-mod reference_collector;
-mod reference_processor;
 // Define the filtering trait
-use reference_collector::{collect_path_refs, collect_operation_tags,collect_operation_securities};
+use crate::filter::content::reference_collector::{collect_path_refs, collect_operation_tags,collect_operation_securities};
+use crate::filter::content::reference_processor;
+use crate::filter::content::reference_collector;
+use crate::filter::content::json_path_filter;
 
 ///Type that is used for filtering openapi paths
 type PathFilter<'d> = Box<dyn Fn(&(&String, &ReferenceOr<PathItem>)) ->  bool + 'd>;
@@ -387,12 +386,11 @@ fn clone_operation(operation:&Operation,allowed_tags: &HashSet<String>,allowed_s
         use crate::parser;
         use insta::assert_json_snapshot;
         use super::*;
-        use std::error::Error;
         use parser::ParsedType;
 
         #[test]
         fn it_filters_paths_with_no_matches() {
-            let openapi: Result<ParsedType<OpenAPI>,Box<dyn Error>> = parser::parse_document(&String::from("tests/resources/user-reference.yaml"));
+            let openapi: Result<ParsedType<OpenAPI>,Box<dyn (std::error::Error)>> = parser::parse_document(&String::from("tests/resources/user-reference.yaml"));
             let filtered_api = extract_content(openapi.unwrap()).filter_by_parameters(FilteringParameters{paths:Some(vec![String::from("non-matching-path")]),..Default::default()});
             assert!(filtered_api.is_some());
             assert_json_snapshot!(filtered_api);
@@ -400,7 +398,7 @@ fn clone_operation(operation:&Operation,allowed_tags: &HashSet<String>,allowed_s
 
         #[test]
         fn it_filters_paths_with_partial_path_name_match() {
-            let openapi: Result<ParsedType<OpenAPI>,Box<dyn Error>> = parser::parse_document(&String::from("tests/resources/user-reference.yaml"));
+            let openapi: Result<ParsedType<OpenAPI>,Box<dyn (std::error::Error)>> = parser::parse_document(&String::from("tests/resources/user-reference.yaml"));
             let filtered_api = extract_content(openapi.unwrap()).filter_by_parameters(FilteringParameters{paths:Some(vec![String::from("*userId*")]),..Default::default()});
             assert!(filtered_api.is_some());
             assert_json_snapshot!(filtered_api);
@@ -408,7 +406,7 @@ fn clone_operation(operation:&Operation,allowed_tags: &HashSet<String>,allowed_s
 
         #[test]
         fn it_filters_paths_with_method_name_match() {
-            let openapi: Result<ParsedType<OpenAPI>,Box<dyn Error>> = parser::parse_document(&String::from("tests/resources/user-reference.yaml"));
+            let openapi: Result<ParsedType<OpenAPI>,Box<dyn (std::error::Error)>> = parser::parse_document(&String::from("tests/resources/user-reference.yaml"));
             let filtered_api = extract_content(openapi.unwrap()).filter_by_parameters(FilteringParameters{methods:Some(vec![String::from("post")]),..Default::default()});
             assert!(filtered_api.is_some());
             assert_json_snapshot!(filtered_api);
@@ -416,7 +414,7 @@ fn clone_operation(operation:&Operation,allowed_tags: &HashSet<String>,allowed_s
 
         #[test]
         fn it_filters_paths_with_tag_name_match() {
-            let openapi: Result<ParsedType<OpenAPI>,Box<dyn Error>> = parser::parse_document(&String::from("tests/resources/user-reference.yaml"));
+            let openapi: Result<ParsedType<OpenAPI>,Box<dyn (std::error::Error)>> = parser::parse_document(&String::from("tests/resources/user-reference.yaml"));
             let filtered_api = extract_content(openapi.unwrap()).filter_by_parameters(FilteringParameters{tags:Some(vec![String::from("item")]),..Default::default()});
             assert!(filtered_api.is_some());
             assert_json_snapshot!(filtered_api);
@@ -424,7 +422,7 @@ fn clone_operation(operation:&Operation,allowed_tags: &HashSet<String>,allowed_s
 
         #[test]
         fn it_filters_paths_with_partial_path_tag_name_and_method_name_match() {
-            let openapi: Result<ParsedType<OpenAPI>,Box<dyn Error>> = parser::parse_document(&String::from("tests/resources/user-reference.yaml"));
+            let openapi: Result<ParsedType<OpenAPI>,Box<dyn (std::error::Error)>> = parser::parse_document(&String::from("tests/resources/user-reference.yaml"));
             let filtered_api = extract_content(openapi.unwrap()).filter_by_parameters(FilteringParameters{methods:Some(vec![String::from("get")]),tags:Some(vec![String::from("item")]),paths:Some(vec![String::from("*userId*")]),..Default::default()});
             assert!(filtered_api.is_some());
             assert_json_snapshot!(filtered_api);
@@ -432,7 +430,7 @@ fn clone_operation(operation:&Operation,allowed_tags: &HashSet<String>,allowed_s
 
         #[test]
         fn it_filters_petstore_with_full_path() {
-            let openapi: Result<ParsedType<OpenAPI>,Box<dyn Error>> = parser::parse_document(&String::from("tests/resources/petstore.yaml"));
+            let openapi: Result<ParsedType<OpenAPI>,Box<dyn (std::error::Error)>> = parser::parse_document(&String::from("tests/resources/petstore.yaml"));
             let filtered_api = extract_content(openapi.unwrap()).filter_by_parameters(FilteringParameters{paths:Some(vec![String::from("/pet/{petId}")]),methods:Some(vec![String::from("get")]),..Default::default()});
             assert!(filtered_api.is_some());
             assert_json_snapshot!(filtered_api);
@@ -440,7 +438,7 @@ fn clone_operation(operation:&Operation,allowed_tags: &HashSet<String>,allowed_s
 
         #[test]
         fn it_filters_petstore_with_full_path_an_api_key_auth() {
-            let openapi: Result<ParsedType<OpenAPI>,Box<dyn Error>> = parser::parse_document(&String::from("tests/resources/petstore.yaml"));
+            let openapi: Result<ParsedType<OpenAPI>,Box<dyn (std::error::Error)>> = parser::parse_document(&String::from("tests/resources/petstore.yaml"));
             let filtered_api = extract_content(openapi.unwrap()).filter_by_parameters(FilteringParameters{paths:Some(vec![String::from("/pet/{petId}")]),methods:Some(vec![String::from("get")]),security:Some(vec![String::from("api_key")]),..Default::default()});
             assert!(filtered_api.is_some());
             assert_json_snapshot!(filtered_api);
@@ -448,7 +446,7 @@ fn clone_operation(operation:&Operation,allowed_tags: &HashSet<String>,allowed_s
 
         #[test]
         fn it_filters_petstore_with_partial_path_and_does_not_keep_unnecessary_security_schemes() {
-            let openapi: Result<ParsedType<OpenAPI>,Box<dyn Error>> = parser::parse_document(&String::from("tests/resources/petstore.yaml"));
+            let openapi: Result<ParsedType<OpenAPI>,Box<dyn (std::error::Error)>> = parser::parse_document(&String::from("tests/resources/petstore.yaml"));
             let filtered_api = extract_content(openapi.unwrap()).filter_by_parameters(FilteringParameters{paths:Some(vec![String::from("*createWithList")]),..Default::default()});
             assert!(filtered_api.is_some());
             assert_json_snapshot!(filtered_api);

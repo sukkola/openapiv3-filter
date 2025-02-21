@@ -1,6 +1,6 @@
 use insta::assert_snapshot;
 use rexpect::session::spawn_command;
-use std::process::{Command, Stdio};
+use std::process::{Command,Stdio};
 use std::path::PathBuf;
 use std::io::Write;
 use std::str::from_utf8;
@@ -8,14 +8,11 @@ use std::fs::read_to_string;
 
 
 #[test]
-fn it_filters_yaml_files() -> Result<(), Box<dyn(std::error::Error)>> {
+fn it_filters_yaml_files() -> Result<(), Box<dyn (std::error::Error)>> {
 
     let bin_path = assert_cmd::cargo::cargo_bin("openapiv3-filter");
 
-    let cmd = define_command(
-        bin_path,
-        "--path *createWithList tests/resources/petstore.yaml".into(),
-    );
+    let cmd = define_command(bin_path,"--path *createWithList tests/resources/petstore.yaml".into());
 
     let mut process = spawn_command(cmd, Some(30000))?;
 
@@ -26,14 +23,11 @@ fn it_filters_yaml_files() -> Result<(), Box<dyn(std::error::Error)>> {
 }
 
 #[test]
-fn it_filters_json_files() -> Result<(), Box<dyn(std::error::Error)>> {
+fn it_filters_json_files() -> Result<(), Box<dyn (std::error::Error)>> {
 
     let bin_path = assert_cmd::cargo::cargo_bin("openapiv3-filter");
 
-    let cmd = define_command(
-        bin_path,
-        "--tag item tests/resources/user-reference.json".into(),
-    );
+    let cmd = define_command(bin_path,"--tag item tests/resources/user-reference.json".into());
 
     let mut process = spawn_command(cmd, Some(30000))?;
 
@@ -44,14 +38,11 @@ fn it_filters_json_files() -> Result<(), Box<dyn(std::error::Error)>> {
 }
 
 #[test]
-fn it_reports_parsing_errors() -> Result<(), Box<dyn(std::error::Error)>> {
+fn it_reports_parsing_errors() -> Result<(), Box<dyn (std::error::Error)>> {
 
     let bin_path = assert_cmd::cargo::cargo_bin("openapiv3-filter");
 
-    let cmd = define_command(
-        bin_path,
-        "--tag item tests/resources/invalid-content".into(),
-    );
+    let cmd = define_command(bin_path,"--tag item tests/resources/invalid-content".into());
 
     let mut process = spawn_command(cmd, Some(30000))?;
 
@@ -62,11 +53,11 @@ fn it_reports_parsing_errors() -> Result<(), Box<dyn(std::error::Error)>> {
 }
 
 #[test]
-fn it_reports_io_errors() -> Result<(), Box<dyn(std::error::Error)>> {
+fn it_reports_io_errors() -> Result<(), Box<dyn (std::error::Error)>> {
 
     let bin_path = assert_cmd::cargo::cargo_bin("openapiv3-filter");
 
-    let cmd = define_command(bin_path, "--tag item tests/resources/not_found".into());
+    let cmd = define_command(bin_path,"--tag item tests/resources/not_found".into());
 
     let mut process = spawn_command(cmd, Some(30000))?;
 
@@ -78,18 +69,14 @@ fn it_reports_io_errors() -> Result<(), Box<dyn(std::error::Error)>> {
 }
 
 #[test]
-fn it_handled_piped_input_with_explicit_pipe_marker_yaml()
-    -> Result<(), Box<dyn(std::error::Error)>>
-{
+fn it_handled_piped_input_with_explicit_pipe_marker_yaml() -> Result<(), Box<dyn (std::error::Error)>> {
 
     // Read the test file
     let contents = read_to_string("tests/resources/petstore.yaml")?;
 
     // Create the command with configured stdin
     let mut child = Command::new(assert_cmd::cargo::cargo_bin("openapiv3-filter"))
-        .arg("--path")
-        .arg("/user")
-        .arg("-")
+        .arg("--path").arg("/user").arg("-")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()?;
@@ -113,17 +100,14 @@ fn it_handled_piped_input_with_explicit_pipe_marker_yaml()
 }
 
 #[test]
-fn it_handled_piped_input_without_explicit_pipe_marker_yaml()
-    -> Result<(), Box<dyn(std::error::Error)>>
-{
+fn it_handled_piped_input_without_explicit_pipe_marker_yaml() -> Result<(), Box<dyn (std::error::Error)>> {
 
     // Read the test file
     let contents = read_to_string("tests/resources/petstore.yaml")?;
 
     // Create the command with configured stdin
     let mut child = Command::new(assert_cmd::cargo::cargo_bin("openapiv3-filter"))
-        .arg("--path")
-        .arg("/user")
+        .arg("--path").arg("/user")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()?;
@@ -147,9 +131,7 @@ fn it_handled_piped_input_without_explicit_pipe_marker_yaml()
 }
 
 #[test]
-fn it_handled_piped_input_without_explicit_pipe_marker_without_filtering_yaml()
-    -> Result<(), Box<dyn(std::error::Error)>>
-{
+fn it_handled_piped_input_without_explicit_pipe_marker_without_filtering_yaml() -> Result<(), Box<dyn (std::error::Error)>> {
 
     // Read the test file
     let contents = read_to_string("tests/resources/user-reference.yaml")?;
@@ -180,9 +162,7 @@ fn it_handled_piped_input_without_explicit_pipe_marker_without_filtering_yaml()
 
 
 #[test]
-fn it_handled_piped_input_without_explicit_pipe_marker_without_filtering_json()
-    -> Result<(), Box<dyn(std::error::Error)>>
-{
+fn it_handled_piped_input_without_explicit_pipe_marker_without_filtering_json() -> Result<(), Box<dyn (std::error::Error)>> {
 
     // Read the test file
     let contents = read_to_string("tests/resources/user-reference.json")?;
@@ -211,7 +191,7 @@ fn it_handled_piped_input_without_explicit_pipe_marker_without_filtering_json()
     Ok(())
 }
 
-fn define_command(bin_path: PathBuf, command: String) -> Command {
+fn define_command(bin_path: PathBuf,command:String) -> Command{
     let mut cmd = Command::new(bin_path);
     cmd.args(command.split(" "));
     cmd

@@ -1,6 +1,5 @@
 use std::fs;
 use std::io::{self, Read};
-use std::error::Error;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
@@ -67,7 +66,7 @@ where
 /// # Returns
 ///
 /// * `Result<ParsedType<T>, Box<dyn std::error::Error>>` - A Result containing the parsed struct, or an error if parsing fails.
-pub fn parse_document<T>(file_name: &str) -> Result<ParsedType<T>,Box<dyn Error>> where
+pub fn parse_document<T>(file_name: &str) -> Result<ParsedType<T>,Box<dyn (std::error::Error)>> where
     T: for<'de> Deserialize<'de>, {
 
     let data = match file_name{

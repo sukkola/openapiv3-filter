@@ -4,7 +4,6 @@ mod filter;
 use clap::Parser;
 use openapiv3::OpenAPI;
 
-use std::error::Error;
 use crate::filter::openapi::{FilteringParameters, OpenAPIFilter};
 use parser::ParsedType;
 use std::process::ExitCode;
@@ -89,7 +88,7 @@ match opts {
         tags,
         security
         } =>{
-        let document: Result<ParsedType<OpenAPI>,Box<dyn Error>> = parser::parse_document(&api_document.expect("Could not parse input document paremeter"));
+        let document: Result<ParsedType<OpenAPI>,Box<dyn (std::error::Error)>> = parser::parse_document(&api_document.expect("Could not parse input document paremeter"));
         match document {
             Ok(openapi) => {
                     match openapi {
