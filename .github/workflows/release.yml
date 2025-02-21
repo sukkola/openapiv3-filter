@@ -16,7 +16,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: x86_64_unknown-linux-gnu
+          toolchain: stable-x86_64_unknown-linux-gnu
       - name: Install cargo-deny
         run: cargo install cargo-deny
       - name: Run cargo deny check
