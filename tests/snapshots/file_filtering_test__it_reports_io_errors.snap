@@ -1,0 +1,5 @@
+---
+source: tests/file_filtering_test.rs
+expression: result.trim_end()
+---
+No such file or directory (os error 2)

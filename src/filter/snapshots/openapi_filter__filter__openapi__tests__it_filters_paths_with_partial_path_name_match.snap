@@ -1,0 +1,121 @@
+---
+source: src/filter/openapi.rs
+expression: filtered_api
+---
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "User Management API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/users/{userId}": {
+      "get": {
+        "tags": [
+          "user",
+          "item"
+        ],
+        "summary": "Get user by ID",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UserIdParam"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User details retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserGroup"
+            }
+          },
+          "id": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "UserGroup": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "responses": {
+      "NotFoundError": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": {
+      "UserIdParam": {
+        "in": "path",
+        "name": "userId",
+        "required": true,
+        "schema": {
+          "type": "integer"
+        },
+        "style": "simple"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "user",
+      "description": "User blaa blaa",
+      "externalDocs": {
+        "url": "http://docs.my-api.com/pet-operations.htm"
+      }
+    },
+    {
+      "name": "item",
+      "description": "Item blaa blaa",
+      "externalDocs": {
+        "url": "http://docs.my-api.com/pet-operations.htm"
+      }
+    }
+  ]
+}

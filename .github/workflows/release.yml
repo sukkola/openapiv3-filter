@@ -1,0 +1,77 @@
+ name: Release
+
+ on:
+   push:
+     tags:
+       - 'v*'
+
+ env:
+   CARGO_TERM_COLOR: always
+
+ jobs:
+   check-release:
+     runs-on: ubuntu-latest
+     steps:
+       - uses: actions/checkout@v4
+       - name: Install Rust
+         uses: dtolnay/rust-toolchain@stable
+         with:
+           toolchain: x86_64_unknown-linux-gnu
+       - name: Install cargo-deny
+         run: cargo install cargo-deny
+       - name: Run cargo deny check
+         run: cargo deny check all
+       
+   release:
+     needs: check-release
+     runs-on: ubuntu-latest
+     strategy:
+       matrix:
+         include:
+           - target: x86_64-unknown-linux-gnu
+             os: linux
+             arch: x86_64
+           - target: aarch64-unknown-linux-gnu
+             os: linux
+             arch: aarch64
+           - target: x86_64-apple-darwin
+             os: macos
+             arch: x86_64
+           - target: aarch64-apple-darwin
+             os: macos
+             arch: aarch64
+           - target: x86_64-pc-windows-gnu
+             os: windowz
+             arch: x86_64
+           - target: aarch64-pc-windows-gnu
+             os: windows
+             arch: aarch64
+
+     steps:
+       - uses: actions/checkout@v4
+       - name: Install Rust
+         uses: dtolnay/rust-toolchain@stable
+         with:
+           toolchain: stable
+           target: ${{ matrix.target }}
+       - name: Install cross
+         run: cargo install cross --git https://github.com/cross-rs/cross
+       - name: Build
+         run: cross build --target ${{ matrix.target }} --release
+       - name: Archive binaries
+         run: |
+           mkdir -p target/release/bin
+           cp target/${{ matrix.target }}/release/openapiv3-filter target/release/bin/openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}
+           tar czvf openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C target/release bin/openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}
+         shell: bash
+       - name: Generate Changelog
+         uses: charmbracelet/glow-action@v1
+         with:
+           token: ${{ secrets.GITHUB_TOKEN }}
+           files: |
+             openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+       - name: Create Release
+         uses: softprops/action-gh-release@v1
+         with:
+           files: |
+             openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz

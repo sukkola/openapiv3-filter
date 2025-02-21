@@ -1,0 +1,5 @@
+---
+source: tests/file_filtering_test.rs
+expression: result.trim_end()
+---
+expected value at line 1 column 1

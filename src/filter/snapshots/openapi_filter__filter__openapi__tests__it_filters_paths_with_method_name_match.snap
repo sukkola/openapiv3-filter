@@ -1,0 +1,119 @@
+---
+source: src/filter/openapi.rs
+expression: filtered_api
+---
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "User Management API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/users": {
+      "post": {
+        "tags": [
+          "user",
+          "collection"
+        ],
+        "summary": "Create a new user",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/UserCreateRequest"
+        },
+        "responses": {
+          "201": {
+            "description": "User created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/FooBarError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserGroup"
+            }
+          },
+          "id": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "UserGroup": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "responses": {
+      "FooBarError": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "requestBodies": {
+      "UserCreateRequest": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/User"
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "user",
+      "description": "User blaa blaa",
+      "externalDocs": {
+        "url": "http://docs.my-api.com/pet-operations.htm"
+      }
+    },
+    {
+      "name": "collection",
+      "description": "Collection blaa blaa",
+      "externalDocs": {
+        "url": "http://docs.my-api.com/pet-operations.htm"
+      }
+    }
+  ]
+}

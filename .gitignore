@@ -1,0 +1,5 @@
+/target
+.idea
+.aider
+.aider*
+.forgejo

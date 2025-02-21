@@ -1,0 +1,19 @@
+[package]
+name = "openapiv3-filter"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+clap = { version = "4.5.27", features = ["derive"] }
+openapiv3 = "2.0.0"
+serde_json = "1.0.137"
+serde_yaml = "0.9.34"
+serde = { version = "1.0.217", features = ["derive"] }
+wildmatch = "2.4.0"
+indexmap = "2.7.1"
+
+[dev-dependencies]
+assert_cmd = "2.0.16"
+insta = { version = "1.42.1", features = ["json", "redactions", "yaml"] }
+rexpect = "0.6.0"
