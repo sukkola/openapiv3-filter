@@ -71,3 +71,5 @@ jobs:
           files: |
             openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
             openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256
+            env:
+              GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}  # Ensure this is set correctly
