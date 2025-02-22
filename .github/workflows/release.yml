@@ -28,6 +28,19 @@ jobs:
             LICENSE
         env:
           GITHUB_TOKEN: "${{ secrets.RELEASE_TOKEN }}"
+      - name: Download source code tarball
+        run: |
+          curl -L -o source.tar.gz ${{ github.event.release.tarball_url }}
+
+      - name: Generate SHA-256 checksum
+        run: |
+          sha256sum source.tar.gz > source.sha256
+
+      - name: Upload SHA file
+        uses: actions/upload-artifact@v4
+        with:
+          name: sha256sum
+          path: source.sha256
 
   release:
     needs: check-release
