@@ -76,3 +76,44 @@ jobs:
             openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256
         env:
           GITHUB_TOKEN: "${{ secrets.RELEASE_TOKEN }}"
+  macos-release:
+    name: macos-release
+    runs-on: macos-13
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - x86_64
+          - arm64
+        include:
+          - arch: x86_64
+            os: macos
+            target: x86_64-apple-darwin
+            release_postfix: ""
+          - arch: aarch64
+            os: macos
+            target: arm64-apple-darwin
+            release_postfix: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Build
+        run: cargo build --target ${{ matrix.target }} --release
+      - name: Archive binaries
+        run: |
+          mkdir -p target/release/bin
+          cp target/${{ matrix.target }}/release/openapiv3-filter${{ matrix.release_postfix }} target/release/bin/openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.release_postfix }}
+          tar czvf openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C target/release bin/openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.release_postfix }}
+        shell: bash
+      - name: Calculate checksums
+        run: |
+          sha256sum "openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" > "openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256"
+          echo "checksums: \n$(ls openapiv3-filter-*.sha256)"
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+            openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256
+            env:
+              GITHUB_TOKEN: "${{ secrets.RELEASE_TOKEN }}"
