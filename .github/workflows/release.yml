@@ -96,6 +96,10 @@ jobs:
             release_postfix: ""
     steps:
       - uses: actions/checkout@v4
+      - name: Install packages
+        run: |
+          brew update || brew update-reset
+          brew install coreutils
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
