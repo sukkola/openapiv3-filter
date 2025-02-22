@@ -78,6 +78,7 @@ jobs:
           GITHUB_TOKEN: "${{ secrets.RELEASE_TOKEN }}"
   macos-release:
     name: macos-release
+    needs: check-release
     runs-on: macos-13
     strategy:
       fail-fast: false
