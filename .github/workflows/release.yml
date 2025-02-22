@@ -36,12 +36,6 @@ jobs:
             os: linux
             arch: aarch64
             release_postfix: ""
-          # - target: x86_64-apple-darwin
-          #   os: macos
-          #   arch: x86_64
-          # - target: aarch64-apple-darwin
-          #   os: macos
-          #   arch: aarch64
           - target: x86_64-pc-windows-gnu
             os: windowz
             arch: x86_64
@@ -77,6 +71,8 @@ jobs:
         env:
           GITHUB_TOKEN: "${{ secrets.RELEASE_TOKEN }}"
   macos-release:
+    #Disable macos release builds
+    if: false
     name: macos-release
     needs: check-release
     runs-on: macos-13
