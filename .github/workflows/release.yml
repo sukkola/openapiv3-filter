@@ -62,7 +62,7 @@ jobs:
         run: |
           mkdir -p target/release/bin
           cp target/${{ matrix.target }}/release/openapiv3-filter${{ matrix.release_postfix }} target/release/bin/openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.release_postfix }}
-          tar czvf openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C target/release bin/openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.release_postfix }}
+          tar czvf openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C target/release/bin openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.release_postfix }}
         shell: bash
       - name: Calculate checksums
         run: |
@@ -108,7 +108,7 @@ jobs:
         run: |
           mkdir -p target/release/bin
           cp target/${{ matrix.target }}/release/openapiv3-filter${{ matrix.release_postfix }} target/release/bin/openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.release_postfix }}
-          tar czvf openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C target/release bin/openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.release_postfix }}
+          tar czvf openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C target/release/bin openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.release_postfix }}
         shell: bash
       - name: Calculate checksums
         run: |
