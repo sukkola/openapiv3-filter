@@ -92,11 +92,14 @@ jobs:
             release_postfix: ""
           - arch: aarch64
             os: macos
-            target: arm64-apple-darwin
+            target: aarch64-apple-darwin
             release_postfix: ""
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
       - name: Build
         run: cargo build --target ${{ matrix.target }} --release
       - name: Archive binaries
