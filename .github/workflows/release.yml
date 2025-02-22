@@ -36,11 +36,11 @@ jobs:
         run: |
           sha256sum source.tar.gz > source.sha256
 
-      - name: Upload SHA file
-        uses: actions/upload-artifact@v4
+      - name: Upload Release source checksum
+        uses: softprops/action-gh-release@v1
         with:
-          name: sha256sum
-          path: source.sha256
+          files: |
+            source.sha256
 
   release:
     needs: check-release
