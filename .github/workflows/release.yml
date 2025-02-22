@@ -31,9 +31,11 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: linux
             arch: x86_64
+            release_postfix: ""
           - target: aarch64-unknown-linux-gnu
             os: linux
             arch: aarch64
+            release_postfix: ""
           # - target: x86_64-apple-darwin
           #   os: macos
           #   arch: x86_64
@@ -43,6 +45,7 @@ jobs:
           - target: x86_64-pc-windows-gnu
             os: windowz
             arch: x86_64
+            release_postfix: ".exe"
 
     steps:
       - uses: actions/checkout@v4
@@ -58,8 +61,8 @@ jobs:
       - name: Archive binaries
         run: |
           mkdir -p target/release/bin
-          cp target/${{ matrix.target }}/release/openapiv3-filter target/release/bin/openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}
-          tar czvf openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C target/release bin/openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}
+          cp target/${{ matrix.target }}/release/openapiv3-filter${{ matrix.release_postfix }} target/release/bin/openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.release_postfix }}
+          tar czvf openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}.tar.gz -C target/release bin/openapiv3-filter-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.release_postfix }}
         shell: bash
       - name: Calculate checksums
         run: |
