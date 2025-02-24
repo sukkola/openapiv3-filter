@@ -2,6 +2,13 @@
 
  This tool filters OpenAPI v3 document contents, keeping only the content and its dependencies that match the provided filters.
 
+
+ ## Installation
+
+ ```bash
+ brew install sukkola/tap/openapiv3-filter
+ ```
+
  ## Usage
 
  ```bash
