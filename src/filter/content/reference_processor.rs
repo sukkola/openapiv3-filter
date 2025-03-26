@@ -87,13 +87,23 @@ fn reference_paths(map: &HashMap<String, Vec<String>>) -> Vec<Vec<String>> {
 /// # Returns
 ///
 /// * `HashSet<String>` - A set of all unique references that are kept after filtering.
-pub fn get_kept_references(map: &HashMap<String, Vec<String>>,referenced_components: &HashSet<String>)-> HashSet<String>{
-    let mut kept_references = reference_paths(map).iter()
-        .filter(|reference_path|!reference_path.is_empty())
-        .filter(|reference_path|referenced_components.contains(&reference_path[0]))
+pub fn get_kept_references(
+    map: &HashMap<String, Vec<String>>,
+    referenced_components: &HashSet<String>,
+) -> HashSet<String> {
+    let mut kept_references = reference_paths(map)
+        .iter()
+        .filter(|reference_path| !reference_path.is_empty())
+        .filter(|reference_path| referenced_components.contains(&reference_path[0]))
         .flatten()
-        .cloned().collect::<HashSet<_>>();
-    kept_references.extend(referenced_components.iter().cloned().collect::<HashSet<String>>());
+        .cloned()
+        .collect::<HashSet<_>>();
+    kept_references.extend(
+        referenced_components
+            .iter()
+            .cloned()
+            .collect::<HashSet<String>>(),
+    );
     kept_references
 }
 
@@ -103,36 +113,45 @@ mod tests {
 
     #[test]
     fn it_collects_multi_level_references() {
-
         let mut map = HashMap::new();
-         map.insert("A".to_string(), vec!["B".to_string(), "C".to_string()]);
-         map.insert("B".to_string(), vec!["D".to_string()]);
-         map.insert("C".to_string(), vec!["A".to_string()]); // Cyclic reference
-         map.insert("D".to_string(), vec![]);
-         map.insert("E".to_string(), vec!["F".to_string()]); // Unrelated component
-         map.insert("F".to_string(), vec!["G".to_string()]);
-         map.insert("G".to_string(), vec![]);
-         let long_vector = vec![String::from("C"), String::from("A"), String::from("B"), String::from("D")];
-         let short_vector = vec![String::from("E"), String::from("F"), String::from("G")];
-         let result =reference_paths(&map);
+        map.insert("A".to_string(), vec!["B".to_string(), "C".to_string()]);
+        map.insert("B".to_string(), vec!["D".to_string()]);
+        map.insert("C".to_string(), vec!["A".to_string()]); // Cyclic reference
+        map.insert("D".to_string(), vec![]);
+        map.insert("E".to_string(), vec!["F".to_string()]); // Unrelated component
+        map.insert("F".to_string(), vec!["G".to_string()]);
+        map.insert("G".to_string(), vec![]);
+        let long_vector = vec![
+            String::from("C"),
+            String::from("A"),
+            String::from("B"),
+            String::from("D"),
+        ];
+        let short_vector = vec![String::from("E"), String::from("F"), String::from("G")];
+        let result = reference_paths(&map);
 
-        assert!(contains_all(&result,&vec![long_vector,short_vector]));
+        assert!(contains_all(&result, &vec![long_vector, short_vector]));
     }
 
     #[test]
     fn it_filters_out_non_referenced_paths() {
-
         let mut map = HashMap::new();
-         map.insert("A".to_string(), vec!["B".to_string(), "C".to_string()]);
-         map.insert("B".to_string(), vec!["D".to_string()]);
-         map.insert("C".to_string(), vec!["A".to_string()]); // Cyclic reference
-         map.insert("D".to_string(), vec![]);
-         map.insert("E".to_string(), vec!["F".to_string()]); // Unrelated component
-         map.insert("F".to_string(), vec!["G".to_string()]);
-         map.insert("G".to_string(), vec![]);
-         let result = get_kept_references(&map,&[String::from("E"),String::from("D")].iter().cloned().collect::<HashSet<_>>());
+        map.insert("A".to_string(), vec!["B".to_string(), "C".to_string()]);
+        map.insert("B".to_string(), vec!["D".to_string()]);
+        map.insert("C".to_string(), vec!["A".to_string()]); // Cyclic reference
+        map.insert("D".to_string(), vec![]);
+        map.insert("E".to_string(), vec!["F".to_string()]); // Unrelated component
+        map.insert("F".to_string(), vec!["G".to_string()]);
+        map.insert("G".to_string(), vec![]);
+        let result = get_kept_references(
+            &map,
+            &[String::from("E"), String::from("D")]
+                .iter()
+                .cloned()
+                .collect::<HashSet<_>>(),
+        );
 
-        assert_eq!(result.len(), 4 );
+        assert_eq!(result.len(), 4);
         assert!(result.contains("D"));
         assert!(result.contains("E"));
         assert!(result.contains("F"));
@@ -141,6 +160,8 @@ mod tests {
 
     fn contains_all(vec_of_vecs: &Vec<Vec<String>>, target_vec_of_vecs: &Vec<Vec<String>>) -> bool {
         // Check if each target vector exists in the vec_of_vecs
-        target_vec_of_vecs.iter().all(|target| vec_of_vecs.contains(target))
+        target_vec_of_vecs
+            .iter()
+            .all(|target| vec_of_vecs.contains(target))
     }
 }

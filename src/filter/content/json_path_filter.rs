@@ -1,4 +1,4 @@
-use serde_json::{Value, Map};
+use serde_json::{Map, Value};
 
 /// Finds paths in a JSON value that match the provided paths.
 ///
@@ -15,10 +15,7 @@ use serde_json::{Value, Map};
 /// * `Option<Value>` - An Option containing the filtered JSON value, or None if no paths match.
 pub fn filter_json(value: &Value, paths: &[&str]) -> Option<Value> {
     // Convert paths into a Vec of Vec<&str> for efficient processing
-    let path_parts: Vec<Vec<&str>> = paths
-        .iter()
-        .map(|path| path.split('.').collect())
-        .collect();
+    let path_parts: Vec<Vec<&str>> = paths.iter().map(|path| path.split('.').collect()).collect();
 
     filter_value(value, &path_parts, &[])
 }
@@ -37,7 +34,11 @@ pub fn filter_json(value: &Value, paths: &[&str]) -> Option<Value> {
 /// # Returns
 ///
 /// * `Option<Value>` - An Option containing the filtered JSON value, or None if no paths match at this level.
-pub fn filter_value(value: &Value, all_paths: &[Vec<&str>], current_path: &[&str]) -> Option<Value> {
+pub fn filter_value(
+    value: &Value,
+    all_paths: &[Vec<&str>],
+    current_path: &[&str],
+) -> Option<Value> {
     match value {
         Value::Object(map) => {
             let filtered_obj = filter_object(map, all_paths, current_path);
@@ -83,7 +84,11 @@ pub fn filter_value(value: &Value, all_paths: &[Vec<&str>], current_path: &[&str
 /// # Returns
 ///
 /// * `Map<String, Value>` - A new JSON object containing only the filtered key-value pairs.
-fn filter_object(map: &Map<String, Value>, all_paths: &[Vec<&str>], current_path: &[&str]) -> Map<String, Value> {
+fn filter_object(
+    map: &Map<String, Value>,
+    all_paths: &[Vec<&str>],
+    current_path: &[&str],
+) -> Map<String, Value> {
     let mut result = Map::new();
 
     for (key, value) in map {
@@ -91,17 +96,16 @@ fn filter_object(map: &Map<String, Value>, all_paths: &[Vec<&str>], current_path
         new_path.push(key);
 
         // Check if this path or any subpath is in our target paths
-        let path_relevant = all_paths.iter().any(|path| {
-            path.len() >= new_path.len() &&
-            path[..new_path.len()] == new_path[..]
-        });
+        let path_relevant = all_paths
+            .iter()
+            .any(|path| path.len() >= new_path.len() && path[..new_path.len()] == new_path[..]);
 
         if path_relevant {
             if let Some(filtered_value) = filter_value(value, all_paths, &new_path) {
                 result.insert(key.clone(), filtered_value);
             }
-        } else if all_paths.iter().any(|path| path.eq(current_path)){
-             result.insert(key.clone(), value.clone());
+        } else if all_paths.iter().any(|path| path.eq(current_path)) {
+            result.insert(key.clone(), value.clone());
         }
     }
 
@@ -147,7 +151,7 @@ mod tests {
             "user.name",
             "user.address.city",
             "user.orders.id",
-            "user.orders.item"
+            "user.orders.item",
         ];
 
         let filtered = filter_json(&json, &paths).unwrap();

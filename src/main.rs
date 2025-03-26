@@ -1,15 +1,15 @@
-mod parser;
 mod filter;
+mod parser;
 
 use clap::Parser;
 use openapiv3::OpenAPI;
 
 use crate::filter::openapi::{FilteringParameters, OpenAPIFilter};
 use parser::ParsedType;
-use std::process::ExitCode;
 use std::io::{self, IsTerminal};
+use std::process::ExitCode;
 
-#[derive(Parser,Default)]
+#[derive(Parser, Default)]
 #[command(version,
           about = "Filters openapi v3 document contents. Keeps only content and its dependencies in the document that matches the provided filters",
           long_about = None,
@@ -29,30 +29,46 @@ use std::io::{self, IsTerminal};
 )]
 /// Filters document by matching specification paths
 struct Opts {
-        #[arg(help = "Input file or - for stdin", default_value = "-")]
-        api_document: Option<String>,
-        ///Matches the path name. Allows * wildcards in matching
-        #[arg(short,long = "path",help = "full path or partial path with * wildcard depicting match for rest of the content\n\
+    #[arg(help = "Input file or - for stdin", default_value = "-")]
+    api_document: Option<String>,
+    ///Matches the path name. Allows * wildcards in matching
+    #[arg(
+        short,
+        long = "path",
+        help = "full path or partial path with * wildcard depicting match for rest of the content\n\
             Examples:\n \
             --path '/pets' - Exact match\n \
             --path '/pets/*' - Match all paths under /pets\n \
-            --path '*/pets' - Match all paths ending with /pets")]
-        path_names: Option<Vec<String>>,
-        #[arg(short ='m',long = "method",help = "http method name used in the operation mapping\n \
+            --path '*/pets' - Match all paths ending with /pets"
+    )]
+    path_names: Option<Vec<String>>,
+    #[arg(
+        short = 'm',
+        long = "method",
+        help = "http method name used in the operation mapping\n \
             Examples:\n \
             --method 'post' - mathches post methods in API specification\n \
-            --method 'post' ----method 'get' - Matches both post and get methods in document")]
-        http_methods: Option<Vec<String>>,
-        #[arg(short,long = "tag",help = "tag name that is matched. Requires fully matched tag names\n \
+            --method 'post' ----method 'get' - Matches both post and get methods in document"
+    )]
+    http_methods: Option<Vec<String>>,
+    #[arg(
+        short,
+        long = "tag",
+        help = "tag name that is matched. Requires fully matched tag names\n \
             Examples:\n \
             --tag 'user_info' - mathches user_info tags in document\n \
-            --tag 'user_info' ----method 'collection' - Matches both user_info and collection tags in document",)]
-        tags: Option<Vec<String>>,
-        #[arg(short,long = "security",help = "security name that is matched. Requires fully matched security names\n \
+            --tag 'user_info' ----method 'collection' - Matches both user_info and collection tags in document"
+    )]
+    tags: Option<Vec<String>>,
+    #[arg(
+        short,
+        long = "security",
+        help = "security name that is matched. Requires fully matched security names\n \
             Examples:\n \
             --security 'api_key' - mathches API document content that uses api_key security definitions\n \
-            --security 'api_key' ----security 'basic_auth' - Matches both api_key and basic_auth security definitions in document",)]
-        security: Option<Vec<String>>,
+            --security 'api_key' ----security 'basic_auth' - Matches both api_key and basic_auth security definitions in document"
+    )]
+    security: Option<Vec<String>>,
 }
 
 impl Opts {
@@ -64,7 +80,10 @@ impl Opts {
         let opts = if has_stdin_data {
             match Self::try_parse() {
                 Ok(opts) => opts,
-                Err(_) => Self { api_document: Some(String::from("-")),..Default::default() }
+                Err(_) => Self {
+                    api_document: Some(String::from("-")),
+                    ..Default::default()
+                },
             }
         } else {
             Self::parse()
@@ -75,45 +94,46 @@ impl Opts {
 }
 
 fn main() -> ExitCode {
-
     // Use our custom parse_args instead of the default parse()
     let opts = Opts::parse_args().expect("Argument parsing failed");
 
-
-    let Opts { api_document, path_names, http_methods, tags, security } = opts;
-        let document: Result<ParsedType<OpenAPI>,Box<dyn (std::error::Error)>> =
-            parser::parse_document(&api_document.expect("Could not parse input document paremeter"));
-        match document {
-            Ok(openapi) => {
-                    match openapi {
-                        ParsedType::Json(val) => {
-                            let res =val.filter_by_parameters(FilteringParameters{
-                                paths:(path_names).clone(),
-                                methods:(http_methods).clone(),
-                                tags:(tags).clone(),
-                                security:(security)
-                            });
-                            let text_res = serde_json::to_string(&res.unwrap()).unwrap();
-                            println!("{}",text_res);
-                            ExitCode::SUCCESS
-                        },
-                        ParsedType:: Yaml(val) => {
-                            let res =val.filter_by_parameters(FilteringParameters{
-                                paths:(path_names).clone(),
-                                methods:(http_methods).clone(),
-                                tags:(tags).clone(),
-                                security:(security)
-                            });
-                            let text_res = serde_yaml::to_string(&res.unwrap()).unwrap();
-                            println!("{}", text_res);
-                            ExitCode::SUCCESS
-                        }
-                    }
-
+    let Opts {
+        api_document,
+        path_names,
+        http_methods,
+        tags,
+        security,
+    } = opts;
+    let document: Result<ParsedType<OpenAPI>, Box<dyn (std::error::Error)>> =
+        parser::parse_document(&api_document.expect("Could not parse input document paremeter"));
+    match document {
+        Ok(openapi) => match openapi {
+            ParsedType::Json(val) => {
+                let res = val.filter_by_parameters(FilteringParameters {
+                    paths: (path_names).clone(),
+                    methods: (http_methods).clone(),
+                    tags: (tags).clone(),
+                    security: (security),
+                });
+                let text_res = serde_json::to_string(&res.unwrap()).unwrap();
+                println!("{}", text_res);
+                ExitCode::SUCCESS
             }
-            Err(error) => {
-                        println!("{}",error);
-                        ExitCode::FAILURE
+            ParsedType::Yaml(val) => {
+                let res = val.filter_by_parameters(FilteringParameters {
+                    paths: (path_names).clone(),
+                    methods: (http_methods).clone(),
+                    tags: (tags).clone(),
+                    security: (security),
+                });
+                let text_res = serde_yaml::to_string(&res.unwrap()).unwrap();
+                println!("{}", text_res);
+                ExitCode::SUCCESS
             }
+        },
+        Err(error) => {
+            println!("{}", error);
+            ExitCode::FAILURE
         }
     }
+}

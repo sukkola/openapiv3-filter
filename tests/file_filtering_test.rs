@@ -1,15 +1,13 @@
 use insta::assert_snapshot;
 use rexpect::session::spawn_command;
-use std::process::{Command, Stdio};
-use std::path::PathBuf;
-use std::io::Write;
-use std::str::from_utf8;
 use std::fs::read_to_string;
-
+use std::io::Write;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use std::str::from_utf8;
 
 #[test]
-fn it_filters_yaml_files() -> Result<(), Box<dyn(std::error::Error)>> {
-
+fn it_filters_yaml_files() -> Result<(), Box<dyn (std::error::Error)>> {
     let bin_path = assert_cmd::cargo::cargo_bin("openapiv3-filter");
 
     let cmd = define_command(
@@ -26,8 +24,7 @@ fn it_filters_yaml_files() -> Result<(), Box<dyn(std::error::Error)>> {
 }
 
 #[test]
-fn it_filters_json_files() -> Result<(), Box<dyn(std::error::Error)>> {
-
+fn it_filters_json_files() -> Result<(), Box<dyn (std::error::Error)>> {
     let bin_path = assert_cmd::cargo::cargo_bin("openapiv3-filter");
 
     let cmd = define_command(
@@ -44,8 +41,7 @@ fn it_filters_json_files() -> Result<(), Box<dyn(std::error::Error)>> {
 }
 
 #[test]
-fn it_reports_parsing_errors() -> Result<(), Box<dyn(std::error::Error)>> {
-
+fn it_reports_parsing_errors() -> Result<(), Box<dyn (std::error::Error)>> {
     let bin_path = assert_cmd::cargo::cargo_bin("openapiv3-filter");
 
     let cmd = define_command(
@@ -62,8 +58,7 @@ fn it_reports_parsing_errors() -> Result<(), Box<dyn(std::error::Error)>> {
 }
 
 #[test]
-fn it_reports_io_errors() -> Result<(), Box<dyn(std::error::Error)>> {
-
+fn it_reports_io_errors() -> Result<(), Box<dyn (std::error::Error)>> {
     let bin_path = assert_cmd::cargo::cargo_bin("openapiv3-filter");
 
     let cmd = define_command(bin_path, "--tag item tests/resources/not_found".into());
@@ -79,9 +74,7 @@ fn it_reports_io_errors() -> Result<(), Box<dyn(std::error::Error)>> {
 
 #[test]
 fn it_handled_piped_input_with_explicit_pipe_marker_yaml()
-    -> Result<(), Box<dyn(std::error::Error)>>
-{
-
+-> Result<(), Box<dyn (std::error::Error)>> {
     // Read the test file
     let contents = read_to_string("tests/resources/petstore.yaml")?;
 
@@ -114,9 +107,7 @@ fn it_handled_piped_input_with_explicit_pipe_marker_yaml()
 
 #[test]
 fn it_handled_piped_input_without_explicit_pipe_marker_yaml()
-    -> Result<(), Box<dyn(std::error::Error)>>
-{
-
+-> Result<(), Box<dyn (std::error::Error)>> {
     // Read the test file
     let contents = read_to_string("tests/resources/petstore.yaml")?;
 
@@ -148,9 +139,7 @@ fn it_handled_piped_input_without_explicit_pipe_marker_yaml()
 
 #[test]
 fn it_handled_piped_input_without_explicit_pipe_marker_without_filtering_yaml()
-    -> Result<(), Box<dyn(std::error::Error)>>
-{
-
+-> Result<(), Box<dyn (std::error::Error)>> {
     // Read the test file
     let contents = read_to_string("tests/resources/user-reference.yaml")?;
 
@@ -178,12 +167,9 @@ fn it_handled_piped_input_without_explicit_pipe_marker_without_filtering_yaml()
     Ok(())
 }
 
-
 #[test]
 fn it_handled_piped_input_without_explicit_pipe_marker_without_filtering_json()
-    -> Result<(), Box<dyn(std::error::Error)>>
-{
-
+-> Result<(), Box<dyn (std::error::Error)>> {
     // Read the test file
     let contents = read_to_string("tests/resources/user-reference.json")?;
 
