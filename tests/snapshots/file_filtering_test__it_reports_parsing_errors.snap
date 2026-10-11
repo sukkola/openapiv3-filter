@@ -1,5 +1,0 @@
----
-source: tests/file_filtering_test.rs
-expression: result.trim_end()
----
-Missing required 'openapi' field: unable to determine OpenAPI version

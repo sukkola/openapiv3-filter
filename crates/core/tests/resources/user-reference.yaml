@@ -1,0 +1,112 @@
+openapi: 3.0.0
+info:
+  title: User Management API
+  version: 1.0.0
+tags:
+  - name: user
+    description: User blaa blaa
+    externalDocs:
+      url: http://docs.my-api.com/pet-operations.htm
+  - name: collection
+    description: Collection blaa blaa
+    externalDocs:
+      url: http://docs.my-api.com/pet-operations.htm
+  - name: item
+    description: Item blaa blaa
+    externalDocs:
+      url: http://docs.my-api.com/pet-operations.htm
+
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserGroup"
+    UserGroup:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+
+  parameters:
+    UserIdParam:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: integer
+
+  requestBodies:
+    UserCreateRequest:
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/User"
+
+  responses:
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+    FooBarError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+
+paths:
+  /users:
+    post:
+      tags:
+        - user
+        - collection
+      summary: Create a new user
+      requestBody:
+        $ref: "#/components/requestBodies/UserCreateRequest"
+      responses:
+        "201":
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "500":
+          $ref: "#/components/responses/FooBarError"
+
+  /users/{userId}:
+    get:
+      tags:
+        - user
+        - item
+      summary: Get user by ID
+      parameters:
+        - $ref: "#/components/parameters/UserIdParam"
+      responses:
+        "200":
+          description: User details retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          $ref: "#/components/responses/NotFoundError"

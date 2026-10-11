@@ -375,10 +375,21 @@ dependencies = [
  "clap",
  "insta",
  "openapiv3",
+ "openapiv3-filter-core",
  "rexpect",
+ "serde_json",
+ "serde_yaml",
+]
+
+[[package]]
+name = "openapiv3-filter-core"
+version = "0.1.0"
+dependencies = [
+ "insta",
  "serde",
  "serde_json",
  "serde_yaml",
+ "thiserror 2.0.11",
  "wildmatch",
 ]
 

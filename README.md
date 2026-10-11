@@ -81,21 +81,59 @@ openapiv3-filter api.yaml --method get
  openapiv3-filter api.yaml --webhook 'user*'
  ```
 
+## Using this as a library
+
+The parsing and filtering engine is also published as a standalone library crate,
+[`openapiv3-filter-core`](crates/core), with no `clap`/`std::fs`/`std::io::stdin` dependencies —
+useful for embedding "filter this OpenAPI document" in another Rust program without shelling out
+to the compiled binary.
+
+```rust
+use openapiv3_filter_core::filter::openapi::{FilteringParameters, OpenAPIFilter};
+use openapiv3_filter_core::parser;
+
+let contents = std::fs::read_to_string("api.yaml")?;
+let document = parser::parse(&contents)?;
+let filtered = document.filter_by_parameters(FilteringParameters {
+    paths: Some(vec![String::from("/pets")]),
+    ..Default::default()
+});
+println!("{}", serde_json::to_string_pretty(&filtered)?);
+```
+
+Add it as a path/git dependency, or once published, from crates.io:
+
+```toml
+[dependencies]
+openapiv3-filter-core = "0.1"
+```
+
+## Repository layout
+
+This repository is a Cargo workspace with two members:
+
+* [`crates/core`](crates/core) (package `openapiv3-filter-core`) — the OpenAPI parsing and
+  reference-closure filtering engine. No CLI/IO dependencies; usable as a library on its own.
+* [`crates/cli`](crates/cli) (package and binary `openapiv3-filter`) — the command-line tool
+  documented above: argument parsing, file/stdin acquisition, and output printing on top of
+  `crates/core`.
+
 ## Development
 
-Run the test suite with `cargo test`. Snapshot tests use [`insta`](https://insta.rs/); after an
-intentional output change, review and accept with `cargo insta review` (or `cargo insta accept`).
+Run the full workspace test suite with `cargo test --workspace`. Snapshot tests use
+[`insta`](https://insta.rs/); after an intentional output change, review and accept with
+`cargo insta review` (or `cargo insta accept`).
 
-Test coverage for the filtering engine (`src/parser.rs`, `src/filter/openapi.rs`,
-`src/filter/content/*`) is measured with
+Test coverage for the filtering engine (`crates/core/src/parser.rs`,
+`crates/core/src/filter/openapi.rs`, `crates/core/src/filter/content/*`) is measured with
 [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov):
 
 ```bash
 cargo install cargo-llvm-cov
 rustup component add llvm-tools-preview
-cargo llvm-cov --summary-only
+cargo llvm-cov --workspace --summary-only
 ```
 
 CI enforces a minimum of 90% line coverage per file on those modules
-(`cargo llvm-cov --summary-only --fail-under-file-lines 90`); at the time of writing, actual
-coverage on them ranges from ~94% to 100%.
+(`cargo llvm-cov --workspace --summary-only --fail-under-file-lines 90`); at the time of writing,
+actual coverage on them ranges from ~98% to 100%.

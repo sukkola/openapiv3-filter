@@ -1,0 +1,22 @@
+[package]
+name = "openapiv3-filter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Filters OpenAPI v3 document contents, keeping only content and its dependencies that match the provided filters"
+
+[[bin]]
+name = "openapiv3-filter"
+path = "src/main.rs"
+
+[dependencies]
+openapiv3-filter-core = { path = "../core" }
+clap = { version = "4.5.27", features = ["derive"] }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = "2.0.16"
+insta = { version = "1.42.1", features = ["json", "redactions", "yaml"] }
+rexpect = "0.6.0"
+openapiv3 = "2.0.0"

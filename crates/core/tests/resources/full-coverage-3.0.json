@@ -1,0 +1,194 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Full Coverage API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/items": {
+      "get": {
+        "operationId": "listItems",
+        "tags": [
+          "items"
+        ],
+        "summary": "List items",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A list of items",
+            "headers": {
+              "X-Rate-Limit": {
+                "$ref": "#/components/headers/RateLimit"
+              }
+            },
+            "content": {
+              "application/json": {
+                "examples": {
+                  "sample": {
+                    "$ref": "#/components/examples/ItemExample"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Item"
+                }
+              }
+            },
+            "links": {
+              "GetItemById": {
+                "operationId": "getItemById",
+                "parameters": {
+                  "itemId": "$response.body#/id"
+                }
+              }
+            }
+          }
+        },
+        "callbacks": {
+          "onItemChange": {
+            "$ref": "#/components/callbacks/ReusableCallback"
+          }
+        }
+      }
+    },
+    "/items/{itemId}": {
+      "get": {
+        "operationId": "getItemById",
+        "tags": [
+          "items"
+        ],
+        "summary": "Get item by id",
+        "parameters": [
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An item",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Item"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/unused": {
+      "get": {
+        "operationId": "unusedOperation",
+        "tags": [
+          "unused"
+        ],
+        "summary": "Not matched by the items tag filter",
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Item": {
+        "type": "object",
+        "discriminator": {
+          "propertyName": "petType",
+          "mapping": {
+            "dog": "#/components/schemas/Dog"
+          }
+        },
+        "properties": {
+          "petType": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "Dog": {
+        "type": "object",
+        "properties": {
+          "breed": {
+            "type": "string"
+          }
+        }
+      },
+      "ItemChangeEvent": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string"
+          }
+        }
+      },
+      "Unused": {
+        "type": "object",
+        "properties": {
+          "unused": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "examples": {
+      "ItemExample": {
+        "value": {
+          "petType": "dog",
+          "name": "Rex"
+        }
+      }
+    },
+    "headers": {
+      "RateLimit": {
+        "description": "rate limit",
+        "schema": {
+          "type": "integer"
+        }
+      }
+    },
+    "callbacks": {
+      "ReusableCallback": {
+        "{$request.body#/callbackUrl}": {
+          "post": {
+            "requestBody": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ItemChangeEvent"
+                  }
+                }
+              }
+            },
+            "responses": {
+              "200": {
+                "description": "Callback received"
+              }
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      }
+    }
+  }
+}

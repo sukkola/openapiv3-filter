@@ -1,0 +1,98 @@
+openapi: 3.0.3
+info:
+  title: Deep Reference Chain API
+  version: 1.0.0
+
+paths:
+  /chain:
+    get:
+      operationId: getChain
+      tags: [chain]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Level1"
+  /other:
+    get:
+      operationId: getOther
+      tags: [other]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Other"
+
+components:
+  schemas:
+    Level1:
+      type: object
+      properties:
+        next:
+          $ref: "#/components/schemas/Level2"
+    Level2:
+      type: object
+      properties:
+        next:
+          $ref: "#/components/schemas/Level3"
+    Level3:
+      type: object
+      properties:
+        next:
+          $ref: "#/components/schemas/Level4"
+        variant:
+          oneOf:
+            - $ref: "#/components/schemas/Level4b"
+            - $ref: "#/components/schemas/Level4c"
+    Level4:
+      type: object
+      properties:
+        next:
+          $ref: "#/components/schemas/Level5"
+    Level4b:
+      type: object
+      properties:
+        kind:
+          type: string
+    Level4c:
+      type: object
+      properties:
+        kind:
+          type: string
+    Level5:
+      type: object
+      allOf:
+        - $ref: "#/components/schemas/Shared"
+        - $ref: "#/components/schemas/CycleA"
+    Shared:
+      type: object
+      properties:
+        shared:
+          type: string
+    # Mutually-referencing pair, reached only through Level5's allOf. Exercises cycle safety
+    # (reference_processor::collect_reference_paths) end-to-end through the real filter pipeline,
+    # not just the isolated unit test in that module.
+    CycleA:
+      type: object
+      properties:
+        partner:
+          $ref: "#/components/schemas/CycleB"
+    CycleB:
+      type: object
+      properties:
+        partner:
+          $ref: "#/components/schemas/CycleA"
+    Other:
+      type: object
+      properties:
+        value:
+          type: string
+    Unused:
+      type: object
+      properties:
+        unused:
+          type: string
