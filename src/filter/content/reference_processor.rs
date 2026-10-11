@@ -130,7 +130,7 @@ mod tests {
         let short_vector = vec![String::from("E"), String::from("F"), String::from("G")];
         let result = reference_paths(&map);
 
-        assert!(contains_all(&result, &vec![long_vector, short_vector]));
+        assert!(contains_all(&result, &[long_vector, short_vector]));
     }
 
     #[test]
@@ -158,7 +158,7 @@ mod tests {
         assert!(result.contains("G"));
     }
 
-    fn contains_all(vec_of_vecs: &Vec<Vec<String>>, target_vec_of_vecs: &Vec<Vec<String>>) -> bool {
+    fn contains_all(vec_of_vecs: &[Vec<String>], target_vec_of_vecs: &[Vec<String>]) -> bool {
         // Check if each target vector exists in the vec_of_vecs
         target_vec_of_vecs
             .iter()

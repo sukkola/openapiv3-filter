@@ -2,7 +2,6 @@ mod filter;
 mod parser;
 
 use clap::Parser;
-use openapiv3::OpenAPI;
 
 use crate::filter::openapi::{FilteringParameters, OpenAPIFilter};
 use parser::ParsedType;
@@ -25,7 +24,10 @@ use std::process::ExitCode;
               openapiv3-filter api.yaml --tag users --tag auth
 
               # Combine multiple filters
-              openapiv3-filter api.json --path '/api/v1/*' --method post --tag admin"
+              openapiv3-filter api.json --path '/api/v1/*' --method post --tag admin
+
+              # Filter webhooks by name (OpenAPI 3.1)
+              openapiv3-filter api.yaml --webhook 'user*'"
 )]
 /// Filters document by matching specification paths
 struct Opts {
@@ -42,6 +44,16 @@ struct Opts {
             --path '*/pets' - Match all paths ending with /pets"
     )]
     path_names: Option<Vec<String>>,
+    ///Matches the webhook name (OpenAPI 3.1 `webhooks`). Allows * wildcards in matching, independent of --path
+    #[arg(
+        short = 'w',
+        long = "webhook",
+        help = "webhook name or partial name with * wildcard, matched independently of --path\n\
+            Examples:\n \
+            --webhook 'userCreated' - Exact match\n \
+            --webhook 'user*' - Match all webhooks starting with user"
+    )]
+    webhook_names: Option<Vec<String>>,
     #[arg(
         short = 'm',
         long = "method",
@@ -100,20 +112,22 @@ fn main() -> ExitCode {
     let Opts {
         api_document,
         path_names,
+        webhook_names,
         http_methods,
         tags,
         security,
     } = opts;
-    let document: Result<ParsedType<OpenAPI>, Box<dyn (std::error::Error)>> =
+    let document: Result<ParsedType<serde_json::Value>, Box<dyn std::error::Error>> =
         parser::parse_document(&api_document.expect("Could not parse input document paremeter"));
     match document {
         Ok(openapi) => match openapi {
             ParsedType::Json(val) => {
                 let res = val.filter_by_parameters(FilteringParameters {
-                    paths: (path_names).clone(),
-                    methods: (http_methods).clone(),
-                    tags: (tags).clone(),
-                    security: (security),
+                    paths: path_names.clone(),
+                    webhooks: webhook_names.clone(),
+                    methods: http_methods.clone(),
+                    tags: tags.clone(),
+                    security: security.clone(),
                 });
                 let text_res = serde_json::to_string(&res.unwrap()).unwrap();
                 println!("{}", text_res);
@@ -121,10 +135,11 @@ fn main() -> ExitCode {
             }
             ParsedType::Yaml(val) => {
                 let res = val.filter_by_parameters(FilteringParameters {
-                    paths: (path_names).clone(),
-                    methods: (http_methods).clone(),
-                    tags: (tags).clone(),
-                    security: (security),
+                    paths: path_names.clone(),
+                    webhooks: webhook_names.clone(),
+                    methods: http_methods.clone(),
+                    tags: tags.clone(),
+                    security: security.clone(),
                 });
                 let text_res = serde_yaml::to_string(&res.unwrap()).unwrap();
                 println!("{}", text_res);

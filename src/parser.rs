@@ -58,7 +58,38 @@ where
     serde_yaml::from_str(contents)
 }
 
+/// Checks whether a document's top-level `openapi` field declares a supported
+/// major.minor version (`3.0` or `3.1`). Patch versions are not enumerated, so
+/// any `3.0.x`/`3.1.x` patch release is accepted without a code change.
+///
+/// # Arguments
+///
+/// * `document` - The parsed document value to check.
+///
+/// # Returns
+///
+/// * `Result<(), String>` - `Ok` if the version is supported, or an error message otherwise.
+pub fn validate_openapi_version(document: &JsonValue) -> Result<(), String> {
+    match document.get("openapi").and_then(JsonValue::as_str) {
+        None => Err(String::from(
+            "Missing required 'openapi' field: unable to determine OpenAPI version",
+        )),
+        Some(version) => {
+            let major_minor = version.split('.').take(2).collect::<Vec<_>>().join(".");
+            if major_minor == "3.0" || major_minor == "3.1" {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Unsupported OpenAPI version '{}': only 3.0.x and 3.1.x documents are supported",
+                    version
+                ))
+            }
+        }
+    }
+}
+
 /// Parses a document from a file or stdin, attempting to parse it as YAML first, then as JSON.
+/// The parsed value is then checked for a supported `openapi` version before being returned.
 ///
 /// # Arguments
 ///
@@ -66,25 +97,35 @@ where
 ///
 /// # Returns
 ///
-/// * `Result<ParsedType<T>, Box<dyn std::error::Error>>` - A Result containing the parsed struct, or an error if parsing fails.
-pub fn parse_document<T>(file_name: &str) -> Result<ParsedType<T>, Box<dyn (std::error::Error)>>
-where
-    T: for<'de> Deserialize<'de>,
-{
+/// * `Result<ParsedType<JsonValue>, Box<dyn std::error::Error>>` - A Result containing the parsed
+///   value tree, or an error if parsing or version validation fails.
+pub fn parse_document(
+    file_name: &str,
+) -> Result<ParsedType<JsonValue>, Box<dyn std::error::Error>> {
     let data = match file_name {
         "-" => std::io::read_to_string(std::io::stdin()),
         _ => read_file(file_name),
     };
     match data {
-        Ok(contents) => match parse_yaml(&contents) {
-            Ok(result) => Ok(wrap_response_type(result, file_name, "yaml", &contents)),
-            Err(_) => match parse_json(&contents) {
-                Ok(result) => Ok(wrap_response_type(result, file_name, "json", &contents)),
+        Ok(contents) => match parse_yaml::<JsonValue>(&contents) {
+            Ok(result) => validate_and_wrap(result, file_name, "yaml", &contents),
+            Err(_) => match parse_json::<JsonValue>(&contents) {
+                Ok(result) => validate_and_wrap(result, file_name, "json", &contents),
                 Err(err) => Err(Box::new(err)),
             },
         },
         Err(e) => Err(Box::new(e)),
     }
+}
+
+fn validate_and_wrap(
+    result: JsonValue,
+    file_name: &str,
+    default_type: &str,
+    input: &str,
+) -> Result<ParsedType<JsonValue>, Box<dyn std::error::Error>> {
+    validate_openapi_version(&result)?;
+    Ok(wrap_response_type(result, file_name, default_type, input))
 }
 
 fn wrap_response_type<T>(
@@ -123,4 +164,58 @@ fn detect_format(input: &str) -> Option<&'static str> {
         return Some("yaml");
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn it_accepts_3_0_patch_versions() {
+        let doc = json!({ "openapi": "3.0.3" });
+        assert!(validate_openapi_version(&doc).is_ok());
+    }
+
+    #[test]
+    fn it_accepts_3_1_patch_versions() {
+        let doc = json!({ "openapi": "3.1.0" });
+        assert!(validate_openapi_version(&doc).is_ok());
+    }
+
+    #[test]
+    fn it_accepts_unenumerated_patch_versions() {
+        let doc = json!({ "openapi": "3.1.7" });
+        assert!(validate_openapi_version(&doc).is_ok());
+    }
+
+    #[test]
+    fn it_rejects_missing_version_field() {
+        let doc = json!({ "info": {} });
+        assert!(validate_openapi_version(&doc).is_err());
+    }
+
+    #[test]
+    fn it_rejects_swagger_2_0() {
+        let doc = json!({ "openapi": "2.0" });
+        assert!(validate_openapi_version(&doc).is_err());
+    }
+
+    #[test]
+    fn it_rejects_future_major_version() {
+        let doc = json!({ "openapi": "4.0.0" });
+        assert!(validate_openapi_version(&doc).is_err());
+    }
+
+    #[test]
+    fn it_parses_json_content_directly() {
+        let value: JsonValue = parse_json(r#"{"openapi": "3.0.3"}"#).unwrap();
+        assert_eq!(value, json!({ "openapi": "3.0.3" }));
+    }
+
+    #[test]
+    fn it_defaults_to_yaml_for_an_unrecognized_extension() {
+        let wrapped = wrap_response_type(json!({ "a": 1 }), "api.spec", "yaml", "");
+        assert!(matches!(wrapped, ParsedType::Yaml(_)));
+    }
 }

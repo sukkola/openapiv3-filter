@@ -8,6 +8,85 @@ expression: filtered_api
     "title": "User Management API",
     "version": "1.0.0"
   },
+  "tags": [
+    {
+      "name": "user",
+      "description": "User blaa blaa",
+      "externalDocs": {
+        "url": "http://docs.my-api.com/pet-operations.htm"
+      }
+    },
+    {
+      "name": "collection",
+      "description": "Collection blaa blaa",
+      "externalDocs": {
+        "url": "http://docs.my-api.com/pet-operations.htm"
+      }
+    }
+  ],
+  "components": {
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserGroup"
+            }
+          }
+        }
+      },
+      "UserGroup": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "requestBodies": {
+      "UserCreateRequest": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/User"
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "FooBarError": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
   "paths": {
     "/users": {
       "post": {
@@ -36,84 +115,5 @@ expression: filtered_api
         }
       }
     }
-  },
-  "components": {
-    "schemas": {
-      "User": {
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string"
-          },
-          "groups": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/UserGroup"
-            }
-          },
-          "id": {
-            "type": "integer"
-          },
-          "username": {
-            "type": "string"
-          }
-        }
-      },
-      "UserGroup": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "integer"
-          },
-          "name": {
-            "type": "string"
-          }
-        }
-      }
-    },
-    "responses": {
-      "FooBarError": {
-        "description": "Resource not found",
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "properties": {
-                "message": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "requestBodies": {
-      "UserCreateRequest": {
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/User"
-            }
-          }
-        }
-      }
-    }
-  },
-  "tags": [
-    {
-      "name": "user",
-      "description": "User blaa blaa",
-      "externalDocs": {
-        "url": "http://docs.my-api.com/pet-operations.htm"
-      }
-    },
-    {
-      "name": "collection",
-      "description": "Collection blaa blaa",
-      "externalDocs": {
-        "url": "http://docs.my-api.com/pet-operations.htm"
-      }
-    }
-  ]
+  }
 }
