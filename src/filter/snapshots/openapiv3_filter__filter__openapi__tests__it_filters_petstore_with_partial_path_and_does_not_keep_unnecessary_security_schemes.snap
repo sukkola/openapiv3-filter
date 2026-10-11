@@ -17,9 +17,19 @@ expression: filtered_api
     },
     "version": "1.0.11"
   },
+  "externalDocs": {
+    "description": "Find out more about Swagger",
+    "url": "http://swagger.io"
+  },
   "servers": [
     {
       "url": "https://petstore3.swagger.io/api/v3"
+    }
+  ],
+  "tags": [
+    {
+      "name": "user",
+      "description": "Operations about user"
     }
   ],
   "paths": {
@@ -44,9 +54,6 @@ expression: filtered_api
           }
         },
         "responses": {
-          "default": {
-            "description": "successful operation"
-          },
           "200": {
             "description": "Successful operation",
             "content": {
@@ -61,6 +68,9 @@ expression: filtered_api
                 }
               }
             }
+          },
+          "default": {
+            "description": "successful operation"
           }
         }
       }
@@ -71,53 +81,46 @@ expression: filtered_api
       "User": {
         "type": "object",
         "properties": {
-          "email": {
-            "example": "john@email.com",
-            "type": "string"
-          },
-          "firstName": {
-            "example": "John",
-            "type": "string"
-          },
           "id": {
-            "example": 10,
             "type": "integer",
-            "format": "int64"
-          },
-          "lastName": {
-            "example": "James",
-            "type": "string"
-          },
-          "password": {
-            "example": "12345",
-            "type": "string"
-          },
-          "phone": {
-            "example": "12345",
-            "type": "string"
-          },
-          "userStatus": {
-            "example": 1,
-            "description": "User Status",
-            "type": "integer",
-            "format": "int32"
+            "format": "int64",
+            "example": 10
           },
           "username": {
-            "example": "theUser",
-            "type": "string"
+            "type": "string",
+            "example": "theUser"
+          },
+          "firstName": {
+            "type": "string",
+            "example": "John"
+          },
+          "lastName": {
+            "type": "string",
+            "example": "James"
+          },
+          "email": {
+            "type": "string",
+            "example": "john@email.com"
+          },
+          "password": {
+            "type": "string",
+            "example": "12345"
+          },
+          "phone": {
+            "type": "string",
+            "example": "12345"
+          },
+          "userStatus": {
+            "type": "integer",
+            "description": "User Status",
+            "format": "int32",
+            "example": 1
           }
+        },
+        "xml": {
+          "name": "user"
         }
       }
     }
-  },
-  "tags": [
-    {
-      "name": "user",
-      "description": "Operations about user"
-    }
-  ],
-  "externalDocs": {
-    "description": "Find out more about Swagger",
-    "url": "http://swagger.io"
   }
 }

@@ -73,6 +73,71 @@ fn it_reports_io_errors() -> Result<(), Box<dyn (std::error::Error)>> {
 }
 
 #[test]
+fn it_filters_openapiv3_1_files() -> Result<(), Box<dyn std::error::Error>> {
+    let bin_path = assert_cmd::cargo::cargo_bin("openapiv3-filter");
+
+    let cmd = define_command(
+        bin_path,
+        "--path *createWithList tests/resources/full-coverage-3.1.yaml".into(),
+    );
+
+    let mut process = spawn_command(cmd, Some(30000))?;
+
+    let result = process.exp_eof()?;
+
+    assert_snapshot!(result.trim_end());
+    Ok(())
+}
+
+#[test]
+fn it_filters_webhooks_by_name_flag() -> Result<(), Box<dyn std::error::Error>> {
+    let bin_path = assert_cmd::cargo::cargo_bin("openapiv3-filter");
+
+    let cmd = define_command(
+        bin_path,
+        "--webhook userCreated tests/resources/full-coverage-3.1.yaml".into(),
+    );
+
+    let mut process = spawn_command(cmd, Some(30000))?;
+
+    let result = process.exp_eof()?;
+
+    assert_snapshot!(result.trim_end());
+    Ok(())
+}
+
+#[test]
+fn it_filters_a_dot_yml_extensioned_file() -> Result<(), Box<dyn std::error::Error>> {
+    let bin_path = assert_cmd::cargo::cargo_bin("openapiv3-filter");
+
+    let cmd = define_command(bin_path, "tests/resources/minimal-api.yml".into());
+
+    let mut process = spawn_command(cmd, Some(30000))?;
+
+    let result = process.exp_eof()?;
+
+    assert_snapshot!(result.trim_end());
+    Ok(())
+}
+
+#[test]
+fn it_follows_a_deep_ref_chain_from_a_json_file() -> Result<(), Box<dyn std::error::Error>> {
+    let bin_path = assert_cmd::cargo::cargo_bin("openapiv3-filter");
+
+    let cmd = define_command(
+        bin_path,
+        "--tag chain tests/resources/deep-ref-chain.json".into(),
+    );
+
+    let mut process = spawn_command(cmd, Some(30000))?;
+
+    let result = process.exp_eof()?;
+
+    assert_snapshot!(result.trim_end());
+    Ok(())
+}
+
+#[test]
 fn it_handled_piped_input_with_explicit_pipe_marker_yaml()
 -> Result<(), Box<dyn (std::error::Error)>> {
     // Read the test file

@@ -24,10 +24,13 @@ jobs:
         with:
           toolchain: stable
           target: ${{ matrix.target }}
+          components: llvm-tools-preview
       - name: Install cross
         run: cargo install cross --git https://github.com/cross-rs/cross
       - name: Install deny
         run: cargo install cargo-deny
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
       - name: Lint
         run: cargo clippy
       - name: Run cargo deny check
@@ -36,3 +39,10 @@ jobs:
         run: cross build --target ${{ matrix.target }} --release
       - name: Run tests
         run: cross test --target ${{ matrix.target }} --release
+      - name: Check test coverage
+        # Minimum line coverage for src/parser.rs, src/filter/openapi.rs, and
+        # src/filter/content/* (the engine this change rewrote) — see
+        # openspec/changes/full-openapi-3-0-3-1-support/traceability.md. Set comfortably
+        # below the ~94-100% currently achieved per file so incidental variance doesn't
+        # flake the build, while still catching a real coverage regression.
+        run: cargo llvm-cov --summary-only --fail-under-file-lines 90

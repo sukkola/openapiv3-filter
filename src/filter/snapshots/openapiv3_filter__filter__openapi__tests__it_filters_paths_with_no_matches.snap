@@ -8,6 +8,5 @@ expression: filtered_api
     "title": "User Management API",
     "version": "1.0.0"
   },
-  "paths": {},
-  "components": {}
+  "paths": {}
 }
