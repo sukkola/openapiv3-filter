@@ -68,7 +68,10 @@ jobs:
       - name: Install cross
         run: cargo install cross --git https://github.com/cross-rs/cross
       - name: Build
-        run: cross build --target ${{ matrix.target }} --release
+        # Workspace layout: the binary is still produced at
+        # target/${{ matrix.target }}/release/openapiv3-filter, unchanged, since Cargo
+        # shares one target/ directory across workspace members keyed by binary name.
+        run: cross build -p openapiv3-filter --target ${{ matrix.target }} --release
       - name: Archive binaries
         run: |
           mkdir -p target/release/bin
@@ -116,7 +119,7 @@ jobs:
           toolchain: stable
           target: ${{ matrix.target }}
       - name: Build
-        run: cargo build --target ${{ matrix.target }} --release
+        run: cargo build -p openapiv3-filter --target ${{ matrix.target }} --release
       - name: Archive binaries
         run: |
           mkdir -p target/release/bin

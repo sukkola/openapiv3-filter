@@ -32,17 +32,18 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Lint
-        run: cargo clippy
+        run: cargo clippy --workspace --all-targets
       - name: Run cargo deny check
         run: cargo deny check licenses
       - name: Build
-        run: cross build --target ${{ matrix.target }} --release
+        run: cross build -p openapiv3-filter --target ${{ matrix.target }} --release
       - name: Run tests
-        run: cross test --target ${{ matrix.target }} --release
+        run: cross test --workspace --target ${{ matrix.target }} --release
       - name: Check test coverage
-        # Minimum line coverage for src/parser.rs, src/filter/openapi.rs, and
-        # src/filter/content/* (the engine this change rewrote) — see
+        # Minimum line coverage for crates/core/src/parser.rs,
+        # crates/core/src/filter/openapi.rs, and crates/core/src/filter/content/* (the
+        # engine this change rewrote) — see
         # openspec/changes/full-openapi-3-0-3-1-support/traceability.md. Set comfortably
-        # below the ~94-100% currently achieved per file so incidental variance doesn't
+        # below the ~98-100% currently achieved per file so incidental variance doesn't
         # flake the build, while still catching a real coverage regression.
-        run: cargo llvm-cov --summary-only --fail-under-file-lines 90
+        run: cargo llvm-cov --workspace --summary-only --fail-under-file-lines 90

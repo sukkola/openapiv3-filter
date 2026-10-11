@@ -1,0 +1,16 @@
+[package]
+name = "openapiv3-filter-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenAPI 3.0/3.1 parsing and reference-closure filtering engine, with no CLI/IO dependencies"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+wildmatch = { workspace = true }
+thiserror = "2.0"
+
+[dev-dependencies]
+insta = { version = "1.42.1", features = ["json", "redactions", "yaml"] }

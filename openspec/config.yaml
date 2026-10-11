@@ -3,51 +3,53 @@ schema: spec-driven
 # Project context (optional)
 # This is shown to AI when creating artifacts.
 context: |
-  Tech stack: Rust (edition 2024), compiled to a single CLI binary `openapiv3-filter`.
-  Key dependencies: `openapiv3` (2.0.0) for the OpenAPI document model, `serde_yaml` / `serde_json`
-  for parsing, `clap` (derive) for the CLI, `wildmatch` for glob-style filter matching, `indexmap`
-  for order-preserving maps. Dev/test stack: `assert_cmd`, `rexpect` (CLI/stdin behavior), `insta`
-  (snapshot testing of filtered output).
+  Tech stack: Rust (edition 2024). Single Cargo package today, compiled to one CLI binary
+  `openapiv3-filter`. Key dependencies: `serde_json` (with `preserve_order`) and `serde_yaml` for
+  parsing/serialization, `clap` (derive) for the CLI, `wildmatch` for glob-style filter matching.
+  `openapiv3` is a dev-only dependency now, used solely for a regression round-trip test, not the
+  runtime path. Dev/test stack: `assert_cmd`, `rexpect` (CLI/stdin behavior), `insta` (snapshot
+  testing), `cargo-llvm-cov` (coverage, enforced in CI at 90% per file on the engine modules).
 
-  Domain: the tool reads an OpenAPI v3 document (YAML or JSON, file or stdin) and emits a reduced
-  document containing only the operations/components that match CLI filters (`--path`, `--method`,
-  `--tag`, `--security`), pulling in their transitive `$ref` dependencies so the result stays a
-  valid, self-contained OpenAPI document.
+  Domain: the tool reads an OpenAPI document (3.0.x or 3.1.x, YAML or JSON, file or stdin) and
+  emits a reduced document containing only the operations/webhooks/components that match CLI
+  filters (`--path`, `--webhook`, `--method`, `--tag`, `--security`), pulling in their transitive
+  `$ref` dependencies so the result stays a valid, self-contained OpenAPI document.
 
-  Source layout: `src/main.rs` (CLI entry), `src/parser.rs` (YAML/JSON -> OpenAPI model),
-  `src/filter/openapi.rs` (top-level filter orchestration), `src/filter/content/` (reference
-  collection/processing and JSON-path-based filtering of components). Integration tests live in
-  `tests/`, with fixtures in `tests/resources/` and accepted snapshots in `tests/snapshots/` /
-  `src/filter/snapshots/`.
+  Architecture (as of the `full-openapi-3-0-3-1-support` change): the document is parsed into a
+  version-agnostic, order-preserving `serde_json::Value` tree — never into a version-specific typed
+  struct. Filtering is one generic reference-closure engine that walks the whole tree by key/path,
+  so every `components.*` category (including 3.1's `pathItems`), operation-level
+  `callbacks`/`links`, and `webhooks` are handled uniformly rather than by hand-enumerated,
+  version-specific code.
 
-  Known constraint to validate before designing: the `openapiv3` crate models OpenAPI 3.0.x; full
-  OpenAPI 3.1 support (JSON Schema 2020-12 schemas, webhooks, nullable-via-type-arrays, etc.) may
-  require a different/updated crate or a custom model layer — confirm current crate capabilities
-  before committing to an approach.
+  Source layout: `src/main.rs` (CLI entry: clap, stdin/file sniffing, println/exit code — the only
+  place with those concerns), `src/parser.rs` (file/stdin reading + YAML/JSON parsing + OpenAPI
+  version validation, all mixed together today — see below), `src/filter/openapi.rs` (the
+  reference-closure filtering engine, operating purely on `serde_json::Value`, no I/O),
+  `src/filter/content/` (generic `$ref` collection/processing and JSON-path-based component
+  filtering). Integration tests live in `tests/`, fixtures in `tests/resources/`, accepted
+  snapshots in `tests/snapshots/` / `src/filter/snapshots/`.
 
-  Conventions: snapshot tests via `insta` (review with `cargo insta review`); keep filtering
-  logic pure/testable and separate from CLI/IO concerns; prefer extending the existing
-  `filter/content` reference-collection pattern over introducing a parallel filtering mechanism.
+  Known constraint to validate before designing: `src/parser.rs::parse_document` currently
+  conflates acquiring bytes (file path or `"-"` stdin convention) with parsing+validating them —
+  this is the one remaining seam between "pure, portable engine" and "CLI-specific plumbing"; the
+  rest of the filtering engine already has zero `std::fs`/`std::io`/`clap`/`println!` coupling
+  (confirmed by grep). `serde_yaml` 0.9 is upstream-deprecated (archived by its maintainer) — worth
+  weighing before depending on it more heavily.
+
+  Conventions: snapshot tests via `insta` (review with `cargo insta review`); keep filtering logic
+  pure/testable and separate from CLI/IO concerns; prefer extending the existing generic
+  reference-closure walk over adding category-specific filtering code; traceability matrix
+  (spec scenario -> test) expected for any change touching the filtering engine, see
+  `openspec/changes/full-openapi-3-0-3-1-support/traceability.md` for the established pattern.
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
 rules:
   proposal:
-    - State plainly whether OpenAPI 3.0 and 3.1 can share one internal document model or need
-      separate code paths, and why.
-    - Call out any crate/dependency changes (e.g. replacing or augmenting `openapiv3`) as a
-      first-class decision, not an implementation detail.
+    - "State plainly whether the split is a single feature-gated crate or a Cargo workspace with separate packages, and why — this is a first-class decision, not an implementation detail, since Cargo cannot exclude a dependency (e.g. clap) from a library consumer's build within a single package."
   design:
-    - Enumerate the OpenAPI structural elements the current filter does NOT yet traverse/preserve
-      (e.g. webhooks, callbacks, links, discriminators, examples, servers, external docs) and
-      state which are in scope for this change.
-    - Describe how version detection (3.0.x vs 3.1.x) happens and how it affects parsing and
-      filtering behavior.
+    - "Enumerate exactly what crosses the new crate boundary (parsing, filtering, error types, the vestigial Option<Self> on filter_by_parameters) and what stays CLI-only (argument parsing, stdin/file acquisition, output printing, exit codes)."
+    - "State explicitly how this layout is expected to serve a future wasm target (wasm32-wasip1 vs wasm32-unknown-unknown, and what if anything blocks it), even though implementing the wasm target itself is out of scope for this change."
   tasks:
-    - Include a task to add/extend fixtures and snapshot tests for both 3.0 and 3.1 inputs for
-      every newly-supported structural element.
-    - Require full coverage testing: every requirement and scenario defined in specs/ must map to
-      at least one automated test (unit, integration, or snapshot) before the change is considered
-      done; include an explicit task to verify this traceability (spec scenario -> test) and a task
-      to measure/enforce code coverage (e.g. `cargo llvm-cov` or `cargo tarpaulin`) on the filtering
-      engine, not just add tests ad hoc.
+    - "Require full coverage testing: every requirement and scenario defined in specs/ must map to at least one automated test before the change is considered done; include an explicit task to verify this traceability and to re-run cargo llvm-cov against the 90%-per-file CI gate after the restructuring."
