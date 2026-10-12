@@ -2,10 +2,10 @@
 source: crates/cli/tests/file_filtering_test.rs
 expression: stdout_str
 ---
-openapi: 3.0.0
+openapi: "3.0.0"
 info:
   title: User Management API
-  version: 1.0.0
+  version: "1.0.0"
 tags:
 - name: user
   description: User blaa blaa
@@ -33,7 +33,7 @@ components:
         groups:
           type: array
           items:
-            $ref: '#/components/schemas/UserGroup'
+            $ref: "#/components/schemas/UserGroup"
     UserGroup:
       type: object
       properties:
@@ -53,7 +53,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/User'
+            $ref: "#/components/schemas/User"
   responses:
     NotFoundError:
       description: Resource not found
@@ -81,30 +81,30 @@ paths:
       - collection
       summary: Create a new user
       requestBody:
-        $ref: '#/components/requestBodies/UserCreateRequest'
+        $ref: "#/components/requestBodies/UserCreateRequest"
       responses:
-        '201':
+        "201":
           description: User created successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
-        '500':
-          $ref: '#/components/responses/FooBarError'
-  /users/{userId}:
+                $ref: "#/components/schemas/User"
+        "500":
+          $ref: "#/components/responses/FooBarError"
+  "/users/{userId}":
     get:
       tags:
       - user
       - item
       summary: Get user by ID
       parameters:
-      - $ref: '#/components/parameters/UserIdParam'
+      - $ref: "#/components/parameters/UserIdParam"
       responses:
-        '200':
+        "200":
           description: User details retrieved
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
+                $ref: "#/components/schemas/User"
+        "404":
+          $ref: "#/components/responses/NotFoundError"

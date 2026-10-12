@@ -33,5 +33,6 @@
 pub mod error;
 pub mod filter;
 pub mod parser;
+pub mod yaml;
 
 pub use error::Error;

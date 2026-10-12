@@ -8,7 +8,7 @@ description = "OpenAPI 3.0/3.1 parsing and reference-closure filtering engine, w
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = { workspace = true }
+serde-saphyr = { workspace = true }
 wildmatch = { workspace = true }
 thiserror = "2.0"
 
