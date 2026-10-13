@@ -1,6 +1,8 @@
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
+use crate::filter::content::pointer::{canonical_ref, escape_segment};
+
 /// Recursively collects `$ref` object keys from the API specification under a given path.
 ///
 /// This function traverses the JSON-like `Value` to find all occurrences of `$ref`. When a `$ref` is found,
@@ -149,6 +151,9 @@ pub fn collect_operation_securities(
 /// * `current_path` - A string slice representing the current path within the `components` structure.
 /// * `refs` - A mutable reference to a `HashMap<String, Vec<String>>` to store the collected references.
 ///   The keys are the paths to the references, and the values are vectors of the reference strings.
+///   Both are in canonical JSON Pointer form (see [`crate::filter::content::pointer`]): path
+///   segments are escaped (`~0`, `~1`), so a component named `a.b` or `a/b` is one segment, and
+///   references are percent-decoded and re-escaped so that equivalent spellings compare equal.
 /// * `allowed_key_recursion_levels` - maximum recursion levels
 /// * `recursion_level` - current recursion level
 pub fn collect_component_refs(
@@ -162,9 +167,9 @@ pub fn collect_component_refs(
         Value::Object(map) => {
             for (key, val) in map {
                 let new_path = if current_path.is_empty() {
-                    key.to_string()
+                    escape_segment(key).into_owned()
                 } else if recursion_level < allowed_key_recursion_levels {
-                    format!("{}/{}", current_path, key)
+                    format!("{}/{}", current_path, escape_segment(key))
                 } else {
                     current_path.to_string()
                 };
@@ -174,7 +179,7 @@ pub fn collect_component_refs(
                         let key = new_path.to_string();
                         refs.entry(key.clone())
                             .or_default()
-                            .push(ref_value.to_string());
+                            .push(canonical_ref(ref_value));
                     }
                 } else {
                     collect_component_refs(
@@ -255,6 +260,27 @@ mod tests {
         assert_eq!(
             refs.get("schemas/Pet"),
             Some(&vec!["#/components/schemas/Animal".to_string()])
+        );
+    }
+
+    #[test]
+    fn it_escapes_component_names_in_graph_keys_and_canonicalises_ref_values() {
+        let value = json!({ "schemas": {
+            "issuing.authorization": { "$ref": "#/components/schemas/a~1b" },
+            "a/b": { "properties": { "x": { "$ref": "#/components/schemas/Foo%20Bar" } } },
+        }});
+        let mut refs = HashMap::new();
+        collect_component_refs(&value, "#/components", &mut refs, 2, 0);
+
+        // The dotted name stays one segment; the slash name is escaped as `a~1b`.
+        assert_eq!(
+            refs.get("#/components/schemas/issuing.authorization"),
+            Some(&vec!["#/components/schemas/a~1b".to_string()])
+        );
+        // Percent-encoded references are decoded so they match the key spelled out plainly.
+        assert_eq!(
+            refs.get("#/components/schemas/a~1b"),
+            Some(&vec!["#/components/schemas/Foo Bar".to_string()])
         );
     }
 }
