@@ -19,20 +19,20 @@ where
     serde_json::from_str(contents)
 }
 
-/// Parses a YAML string into a struct (see [`crate::yaml`] for how YAML is read).
+/// Builds the error for content that is neither valid JSON nor valid YAML.
 ///
-/// # Arguments
-///
-/// * `contents` - A string slice representing the YAML string to parse.
-///
-/// # Returns
-///
-/// * `Result<T, serde_saphyr::Error>` - A Result containing the parsed struct, or a serde_saphyr::Error if an error occurs.
-fn parse_yaml<T>(contents: &str) -> Result<T, serde_saphyr::Error>
-where
-    T: for<'de> Deserialize<'de>,
-{
-    crate::yaml::from_str(contents)
+/// With the default `yaml-saphyr` implementation this is the JSON error, as it always has been
+/// (YAML's grammar accepts nearly any text, so a YAML failure is a structural violation that the
+/// JSON parser reports just as well). The `yaml-lean` implementation reports its own, more precise
+/// syntax error instead.
+#[cfg(not(feature = "yaml-lean"))]
+fn malformed(json_error: serde_json::Error, _yaml_error: crate::yaml::YamlError) -> Error {
+    Error::Malformed(json_error)
+}
+
+#[cfg(feature = "yaml-lean")]
+fn malformed(_json_error: serde_json::Error, yaml_error: crate::yaml::YamlError) -> Error {
+    Error::MalformedYaml(yaml_error.to_string())
 }
 
 /// Checks whether a document's top-level `openapi` field declares a supported
@@ -65,9 +65,9 @@ pub fn validate_openapi_version(document: &JsonValue) -> Result<(), String> {
     }
 }
 
-/// Parses document content already in memory, attempting to parse it as YAML first, then as
-/// JSON. The parsed value is then checked for a supported `openapi` version before being
-/// returned.
+/// Parses document content already in memory, attempting to parse it as JSON first (much faster
+/// than the YAML parser, and the common case for machine-generated documents), then as YAML. The
+/// parsed value is then checked for a supported `openapi` version before being returned.
 ///
 /// This function performs no file or stdin access itself: acquiring the bytes to pass in here
 /// (reading a file, reading stdin, ...) is the caller's responsibility.
@@ -81,9 +81,10 @@ pub fn validate_openapi_version(document: &JsonValue) -> Result<(), String> {
 /// * `Result<Value, Error>` - A Result containing the parsed value tree, or an error if parsing
 ///   or version validation fails.
 pub fn parse(contents: &str) -> Result<JsonValue, Error> {
-    let value = match parse_yaml::<JsonValue>(contents) {
+    let value = match parse_json::<JsonValue>(contents) {
         Ok(result) => result,
-        Err(_) => parse_json::<JsonValue>(contents)?,
+        Err(json_error) => crate::yaml::parse_value(contents)
+            .map_err(|yaml_error| malformed(json_error, yaml_error))?,
     };
     validate_openapi_version(&value).map_err(Error::UnsupportedVersion)?;
     Ok(value)
@@ -156,6 +157,36 @@ mod tests {
         // plain text as a scalar, so an unparseable document needs an actual structural
         // violation to fail both parsers.
         let malformed = parse("{\"unterminated");
+        #[cfg(not(feature = "yaml-lean"))]
         assert!(matches!(malformed, Err(Error::Malformed(_))));
+        #[cfg(feature = "yaml-lean")]
+        assert!(matches!(malformed, Err(Error::MalformedYaml(_))));
+    }
+
+    #[test]
+    fn it_parses_json_and_yaml_renderings_of_the_same_document_identically() {
+        let json = r#"{"openapi": "3.0.3", "paths": {"/b": {}, "/a": {}}, "info": {"title": "T"}}"#;
+        let yaml = "openapi: 3.0.3\npaths:\n  /b: {}\n  /a: {}\ninfo:\n  title: T\n";
+
+        let from_json = parse(json).unwrap();
+        let from_yaml = parse(yaml).unwrap();
+
+        assert_eq!(from_json, from_yaml);
+        let keys = |v: &JsonValue| {
+            v["paths"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(keys(&from_json), keys(&from_yaml));
+    }
+
+    #[test]
+    fn it_falls_back_to_yaml_for_flow_style_content_that_is_not_json() {
+        // Valid YAML (single quotes, bare words) that the JSON parser rejects.
+        let value = parse("{openapi: '3.1.0', info: {title: T}}").unwrap();
+        assert_eq!(value["openapi"], "3.1.0");
     }
 }

@@ -5,10 +5,21 @@ edition.workspace = true
 license.workspace = true
 description = "OpenAPI 3.0/3.1 parsing and reference-closure filtering engine, with no CLI/IO dependencies"
 
+[features]
+# Which YAML implementation to use. At least one is required; if both are enabled `yaml-lean`
+# is the one used by `yaml::parse_value` / `yaml::value_to_string`.
+default = ["yaml-saphyr"]
+yaml-saphyr = ["dep:serde-saphyr"]
+yaml-lean = ["dep:granit-parser", "dep:zmij"]
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde-saphyr = { workspace = true }
+serde-saphyr = { workspace = true, optional = true }
+# `yaml-lean`: the in-crate YAML layer (see src/yaml/lean). granit-parser is the event parser
+# serde-saphyr itself builds on, so the default build resolves a single copy of it.
+granit-parser = { version = "1.3", optional = true }
+zmij = { version = "1", optional = true }
 wildmatch = { workspace = true }
 thiserror = "2.0"
 
