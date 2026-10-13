@@ -60,9 +60,11 @@ pub(super) fn classify(tag: Option<&Tag>) -> Kind {
     let name = name.map(|n| n.strip_prefix('!').unwrap_or(n));
     match name.and_then(by_name) {
         Some(kind) => kind,
-        None if spelled.starts_with("!include") || spelled.starts_with(&format!("{NS}include")) => {
-            Kind::Unsupported
-        }
+        // The local (non-namespaced) spelling of `include`, which `core_suffix` does not
+        // recognise since it is not a core YAML tag; matched exactly, not as a prefix, so an
+        // unrelated custom tag that merely starts with "include" (`!includeFoo`) is not caught
+        // by this and instead falls through to `Implicit` as any other unknown tag would.
+        None if spelled == "!include" || spelled == format!("{NS}include") => Kind::Unsupported,
         None => Kind::Implicit,
     }
 }

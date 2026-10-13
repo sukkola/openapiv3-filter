@@ -19,8 +19,8 @@ const FOLD_COLS: usize = 80;
 /// Serializes `value` as a YAML document.
 ///
 /// `value` need not have come from [`super::parse`] — it can be built programmatically — so this
-/// enforces the same nesting cap ([`super::MAX_DEPTH`]) the parser does, rather than recursing
-/// into a stack overflow on a pathologically deep tree the parser would never have produced.
+/// enforces the same nesting cap (`super::MAX_DEPTH`) the parser does, rather than recursing into
+/// a stack overflow on a pathologically deep tree the parser would never have produced.
 pub fn to_string(value: &Value) -> Result<String, YamlError> {
     let mut out = String::new();
     match value {

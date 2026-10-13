@@ -65,10 +65,24 @@ pub fn validate_openapi_version(document: &JsonValue) -> Result<(), String> {
     }
 }
 
-/// Whether `contents` contains the bare JSON integer literal `-0` (not `-0.0`, `-0e1`, `-00`, a
-/// larger number merely ending in `-0`, or `-0` inside a string) anywhere. A cheap, allocation-free
-/// single pass, intended as a pre-check before [`strip_bare_negative_zero_sign`] so the common case
-/// (no `-0` anywhere) costs only this scan and nothing more.
+/// Whether the `-` at byte position `i` of `bytes` starts a complete, free-standing JSON integer
+/// literal `-0`: not merged with a digit or another `-` right before it (`3-0`, `--0`, neither of
+/// which is valid JSON on its own but both of which would become one after naively dropping the
+/// sign), and not followed by a digit, `.`, `e`, or `E` (`-00`, `-0.0`, `-0e1`), which would make
+/// it a different, unambiguous numeral. `i` is assumed to be outside any string.
+fn is_bare_negative_zero_at(bytes: &[u8], i: usize) -> bool {
+    bytes.get(i + 1) == Some(&b'0')
+        && !matches!(bytes.get(i + 2), Some(b'0'..=b'9' | b'.' | b'e' | b'E'))
+        && match i.checked_sub(1).map(|j| bytes[j]) {
+            None => true,
+            Some(b) => matches!(b, b' ' | b'\t' | b'\n' | b'\r' | b'{' | b'[' | b',' | b':'),
+        }
+}
+
+/// Whether `contents` contains the bare JSON integer literal `-0` (see [`is_bare_negative_zero_at`]
+/// for exactly what counts) anywhere outside a string. A cheap, allocation-free single pass,
+/// intended as a pre-check before [`strip_bare_negative_zero_sign`] so the common case (no `-0`
+/// anywhere) costs only this scan and nothing more.
 fn contains_bare_negative_zero(contents: &str) -> bool {
     let bytes = contents.as_bytes();
     let mut in_string = false;
@@ -86,11 +100,7 @@ fn contains_bare_negative_zero(contents: &str) -> bool {
         }
         match b {
             b'"' => in_string = true,
-            b'-' if bytes.get(i + 1) == Some(&b'0')
-                && !matches!(bytes.get(i + 2), Some(b'0'..=b'9' | b'.' | b'e' | b'E')) =>
-            {
-                return true;
-            }
+            b'-' if is_bare_negative_zero_at(bytes, i) => return true,
             _ => {}
         }
         i += 1;
@@ -129,10 +139,7 @@ fn strip_bare_negative_zero_sign(contents: &str) -> String {
             i += 1;
             continue;
         }
-        if b == b'-'
-            && bytes.get(i + 1) == Some(&b'0')
-            && !matches!(bytes.get(i + 2), Some(b'0'..=b'9' | b'.' | b'e' | b'E'))
-        {
+        if b == b'-' && is_bare_negative_zero_at(bytes, i) {
             out.push(b'0'); // drop the '-', keep the '0'
             i += 2;
             continue;
@@ -163,15 +170,20 @@ pub fn parse(contents: &str) -> Result<JsonValue, Error> {
         contains_bare_negative_zero(contents).then(|| strip_bare_negative_zero_sign(contents));
     let value = match parse_json::<JsonValue>(normalized.as_deref().unwrap_or(contents)) {
         Ok(result) => result,
-        Err(_) => {
-            // Re-derive the JSON error against the original text, not the `-0`-rewritten copy
-            // (if any), so a reported line/column matches what the caller actually passed in.
-            // The rewrite only ever turns a bare `-0` into `0`, one byte shorter but just as
-            // valid a number in the same position, so it cannot be the reason `contents` itself
-            // fails to parse — it fails the same way `normalized` just did.
-            let json_error = parse_json::<JsonValue>(contents).expect_err(
-                "a bare `-0` rewritten to `0` cannot turn invalid JSON into valid JSON",
-            );
+        Err(rewritten_error) => {
+            // If a `-0` rewrite happened, `rewritten_error`'s position was computed against the
+            // rewritten text; re-derive it against the original so a reported line/column
+            // matches what the caller actually passed in. The rewrite only ever turns a bare
+            // `-0` into `0`, one byte shorter but just as valid a number in the same position, so
+            // it cannot be the reason `contents` itself fails to parse — it fails the same way.
+            // When there was no rewrite, `rewritten_error` already came from `contents` itself.
+            let json_error = if normalized.is_some() {
+                parse_json::<JsonValue>(contents).expect_err(
+                    "a bare `-0` rewritten to `0` cannot turn invalid JSON into valid JSON",
+                )
+            } else {
+                rewritten_error
+            };
             crate::yaml::parse_value(contents)
                 .map_err(|yaml_error| malformed(json_error, yaml_error))?
         }
@@ -321,6 +333,25 @@ mod tests {
 
         assert_eq!(value["s"], json!("code -0 here"));
         assert_eq!(value["e\"d"], json!("-0"));
+    }
+
+    #[test]
+    fn it_does_not_merge_a_digit_into_an_adjacent_bare_negative_zero() {
+        // `3-0` is not a valid JSON number on its own; naively dropping the `-` would turn it
+        // into the valid number `30`, silently changing an invalid document into a different
+        // valid one instead of falling back to YAML (which reads the whole thing as a string).
+        let value = parse(r#"{"openapi": "3.0.3", "v": 3-0}"#).unwrap();
+
+        assert_eq!(value["v"], json!("3-0"));
+    }
+
+    #[test]
+    fn it_does_not_merge_a_second_minus_into_a_bare_negative_zero() {
+        // `--0` is not valid JSON either; dropping only the second `-` would turn it into the
+        // valid (if still wrong-typed) number `-0`.
+        let value = parse(r#"{"openapi": "3.0.3", "v": --0}"#).unwrap();
+
+        assert_eq!(value["v"], json!("--0"));
     }
 
     #[test]

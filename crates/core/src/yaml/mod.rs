@@ -5,13 +5,13 @@
 //! | feature                | implementation                                             | notes |
 //! |------------------------|------------------------------------------------------------|-------|
 //! | `yaml-saphyr` (default) | [`serde-saphyr`](https://crates.io/crates/serde-saphyr)   | full serde integration, rendered syntax-error snippets |
-//! | `yaml-lean`            | [`lean`] (in this crate, on top of `granit-parser`)         | `Value` only, roughly half the wasm size |
+//! | `yaml-lean`            | `lean` (in this crate, on top of `granit-parser`)         | `Value` only, roughly half the wasm size |
 //!
 //! At least one of the two must be enabled. Cargo features are additive, so when both are enabled
 //! (the default features plus `yaml-lean`) the lean implementation is the one used by
-//! [`parse_value`] and [`value_to_string`]; the generic [`from_str`] / [`to_string`] only exist
-//! with `yaml-saphyr`. To get a build that does not link `serde-saphyr` at all, depend on this
-//! crate with `default-features = false, features = ["yaml-lean"]`.
+//! [`parse_value`] and [`value_to_string`]; the generic `from_str` / `to_string` only exist with
+//! `yaml-saphyr`. To get a build that does not link `serde-saphyr` at all, depend on this crate
+//! with `default-features = false, features = ["yaml-lean"]`.
 //!
 //! The lean implementation reads and writes the same documents as the default one; its
 //! deliberate differences are listed in `src/yaml/lean/NOTICE.md` and pinned by tests:

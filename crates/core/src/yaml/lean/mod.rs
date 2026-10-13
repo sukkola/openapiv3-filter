@@ -347,6 +347,16 @@ pub fn parse(text: &str) -> Result<Value, YamlError> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn it_accepts_a_custom_tag_that_merely_starts_with_include() {
+        // Only the exact local `!include` tag (or its namespaced spelling) is unsupported; an
+        // unrelated custom tag that happens to start with the same letters is just an unknown
+        // tag, accepted and ignored like any other.
+        let value = parse("k: !includeFoo bar\n").unwrap();
+
+        assert_eq!(value["k"], Value::String("bar".into()));
+    }
+
     /// `a0: &a0 [0]`, `a1: &a1 [*a0]`, ... each one element deeper than the last via an alias, not
     /// direct nesting: `push` never sees more than two open frames (the root mapping and the
     /// current list) however long the chain, so only the depth check on the alias itself can
