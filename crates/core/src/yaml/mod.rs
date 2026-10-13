@@ -166,6 +166,13 @@ mod tests {
     }
 
     #[test]
+    fn it_rejects_an_alias_to_a_non_string_tagged_scalar_used_as_a_mapping_key() {
+        // The same rule as above, but reached through an alias to an anchor defined in a value
+        // position rather than a tagged scalar written directly as the key.
+        assert!(parse_value("a: &n !!int 42\nb:\n  ? *n\n  : v\n").is_err());
+    }
+
+    #[test]
     fn it_accepts_a_mapping_key_whose_tag_is_compatible_with_a_string() {
         // Unlike an int/bool/float/null tag, these are all fine as a plain key: no tag, the
         // non-specific `!`/`!!`, an explicit `!!str`, and an untagged non-finite-looking text

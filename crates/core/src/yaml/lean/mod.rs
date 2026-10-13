@@ -54,11 +54,25 @@ enum Frame {
     },
 }
 
+/// A finished anchored node.
+struct AnchorEntry {
+    value: Value,
+    nodes: usize,
+    /// See [`Builder::put`].
+    depth: usize,
+    /// For a scalar, the text a mapping key spelled with an alias to it would take; `None` for a
+    /// collection, which can never be used as a key.
+    key_text: Option<String>,
+    /// Whether this anchor is valid as a mapping key: always true for a collection's own check
+    /// (via `key_text` being `None`, so this is irrelevant there), and for a scalar, whether its
+    /// tag (if any) was one a mapping key can have — the same rule the direct-key path enforces,
+    /// which an alias to the anchor must also be held to.
+    key_ok: bool,
+}
+
 struct Builder {
     stack: Vec<Frame>,
-    /// Finished anchored nodes: the value, the number of nodes it contains, its depth (see
-    /// [`Builder::put`]), and for scalars the text a mapping key spelled with an alias would take.
-    anchors: HashMap<usize, (Value, usize, usize, Option<String>)>,
+    anchors: HashMap<usize, AnchorEntry>,
     root: Option<Value>,
     documents: usize,
     aliases: usize,
@@ -111,6 +125,7 @@ impl Builder {
         nodes: usize,
         depth: usize,
         key_text: Option<&str>,
+        key_ok: bool,
     ) -> Result<(), YamlError> {
         if id != 0 {
             if self.anchors.len() >= MAX_ANCHORS {
@@ -118,7 +133,13 @@ impl Builder {
             }
             self.anchors.insert(
                 id,
-                (value.clone(), nodes, depth, key_text.map(str::to_owned)),
+                AnchorEntry {
+                    value: value.clone(),
+                    nodes,
+                    depth,
+                    key_text: key_text.map(str::to_owned),
+                    key_ok,
+                },
             );
         }
         Ok(())
@@ -138,6 +159,24 @@ fn check_tag(tag: Option<&granit_parser::Tag>, node: scalar::Node) -> Result<(),
         Some(required) if required != node => err("unsupported tag on this kind of node"),
         _ => Ok(()),
     }
+}
+
+/// Whether a scalar with this tag is valid as a mapping key: the engine accepts a tag compatible
+/// with ending up as a JSON object's string key — no tag, the non-specific `!`/`!!`, `!!str`, or
+/// any tag it does not itself recognise, all of which `classify` maps to `Str` or `Implicit` —
+/// but rejects one that asserts a genuinely different type, regardless of whether the tag and
+/// text would even be compatible on their own (so `!!int notanumber` is rejected the same way
+/// `!!int 1` is, even though only one of them is an "invalid" integer). Used both for a scalar
+/// directly in key position and for an alias to an anchor, which must be held to the same rule.
+fn tag_allows_mapping_key(tag: Option<&granit_parser::Tag>) -> bool {
+    !matches!(
+        scalar::classify(tag),
+        scalar::Kind::Null
+            | scalar::Kind::Bool
+            | scalar::Kind::Int
+            | scalar::Kind::Float
+            | scalar::Kind::Unsupported
+    )
 }
 
 /// Parses YAML (or JSON) text into a value tree, preserving mapping key order.
@@ -173,21 +212,7 @@ pub fn parse(text: &str) -> Result<Value, YamlError> {
                     ))
                 };
                 if matches!(b.stack.last(), Some(Frame::Map { key: None, .. })) {
-                    // A mapping key always ends up as a JSON object's string key. The engine
-                    // accepts a tag compatible with that — no tag, the non-specific `!`/`!!`,
-                    // `!!str`, or any tag it does not itself recognise, all of which `classify`
-                    // maps to `Str` or `Implicit` — but rejects one that asserts a genuinely
-                    // different type, regardless of whether the tag and text would even be
-                    // compatible on their own (so `!!int notanumber: v` is rejected the same way
-                    // `!!int 1: v` is, even though only one of them is an "invalid" integer).
-                    if matches!(
-                        scalar::classify(tag.as_deref()),
-                        scalar::Kind::Null
-                            | scalar::Kind::Bool
-                            | scalar::Kind::Int
-                            | scalar::Kind::Float
-                            | scalar::Kind::Unsupported
-                    ) {
+                    if !tag_allows_mapping_key(tag.as_deref()) {
                         return Err(at("a mapping key cannot have this tag".into()));
                     }
                     if scalar::is_nullish(&text, style, tag.as_deref()) {
@@ -207,11 +232,22 @@ pub fn parse(text: &str) -> Result<Value, YamlError> {
                     // falls back to the key's own text the same way.
                     let resolved = scalar::resolve(&text, style, tag.as_deref())
                         .unwrap_or_else(|_| Value::String(text.to_string()));
-                    b.anchor(anchor, &resolved, 1, 0, Some(&text))?;
+                    b.anchor(anchor, &resolved, 1, 0, Some(&text), true)?;
                     continue;
                 }
                 let value = scalar::resolve(&text, style, tag.as_deref()).map_err(at)?;
-                b.anchor(anchor, &value, 1, 0, Some(&text))?;
+                // A value-position scalar can still be aliased as a *key* later (`&n 42: ok` is
+                // key position so always key_ok, but `v: &n 42` then `k: *n` is not): record
+                // whether this tag would survive the same check the key branch above runs, so an
+                // alias to it is held to that rule too, not just a direct tagged scalar key.
+                b.anchor(
+                    anchor,
+                    &value,
+                    1,
+                    0,
+                    Some(&text),
+                    tag_allows_mapping_key(tag.as_deref()),
+                )?;
                 b.put(value, 1, 0)?;
             }
             Event::SequenceStart(_, anchor, tag) => {
@@ -253,7 +289,7 @@ pub fn parse(text: &str) -> Result<Value, YamlError> {
                     } => (anchor, Value::Object(entries), nodes, depth + 1),
                     Frame::Map { .. } => return err("mapping key without a value"),
                 };
-                b.anchor(anchor, &value, nodes, depth, None)?;
+                b.anchor(anchor, &value, nodes, depth, None, false)?;
                 b.put(value, nodes, depth)?;
             }
             Event::Alias(id) => {
@@ -264,14 +300,20 @@ pub fn parse(text: &str) -> Result<Value, YamlError> {
                 {
                     return err("too many YAML aliases");
                 }
-                let Some((value, nodes, depth, key_text)) = b.anchors.get(&id) else {
+                let Some(entry) = b.anchors.get(&id) else {
                     return err("alias refers to an unknown or still open anchor");
                 };
                 if matches!(b.stack.last(), Some(Frame::Map { key: None, .. })) {
-                    let Some(text) = key_text.clone() else {
+                    let Some(text) = entry.key_text.clone() else {
                         return err("an alias to a collection cannot be used as a mapping key");
                     };
-                    if value.is_null() {
+                    // Held to the same rule as a scalar directly in key position: an alias to an
+                    // anchor whose tag asserted a non-string type is rejected too, not just a
+                    // tagged scalar written directly as the key.
+                    if !entry.key_ok {
+                        return err("a mapping key cannot have this tag");
+                    }
+                    if entry.value.is_null() {
                         return err("a null mapping key cannot be used as a string key");
                     }
                     if let Some(Frame::Map { key, .. }) = b.stack.last_mut() {
@@ -284,10 +326,10 @@ pub fn parse(text: &str) -> Result<Value, YamlError> {
                 // nesting already open here, which is exactly how a chain of anchors (each
                 // wrapping the previous alias) can build a tree far deeper than any single
                 // `push` call witnessed.
-                if b.stack.len() + depth > MAX_DEPTH {
+                if b.stack.len() + entry.depth > MAX_DEPTH {
                     return err("YAML nesting is too deep");
                 }
-                let (value, nodes, depth) = (value.clone(), *nodes, *depth);
+                let (value, nodes, depth) = (entry.value.clone(), entry.nodes, entry.depth);
                 b.replayed += nodes;
                 if b.replayed > MAX_REPLAYED_NODES {
                     return err("YAML alias expansion is too large");

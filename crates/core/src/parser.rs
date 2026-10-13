@@ -163,8 +163,18 @@ pub fn parse(contents: &str) -> Result<JsonValue, Error> {
         contains_bare_negative_zero(contents).then(|| strip_bare_negative_zero_sign(contents));
     let value = match parse_json::<JsonValue>(normalized.as_deref().unwrap_or(contents)) {
         Ok(result) => result,
-        Err(json_error) => crate::yaml::parse_value(contents)
-            .map_err(|yaml_error| malformed(json_error, yaml_error))?,
+        Err(_) => {
+            // Re-derive the JSON error against the original text, not the `-0`-rewritten copy
+            // (if any), so a reported line/column matches what the caller actually passed in.
+            // The rewrite only ever turns a bare `-0` into `0`, one byte shorter but just as
+            // valid a number in the same position, so it cannot be the reason `contents` itself
+            // fails to parse — it fails the same way `normalized` just did.
+            let json_error = parse_json::<JsonValue>(contents).expect_err(
+                "a bare `-0` rewritten to `0` cannot turn invalid JSON into valid JSON",
+            );
+            crate::yaml::parse_value(contents)
+                .map_err(|yaml_error| malformed(json_error, yaml_error))?
+        }
     };
     validate_openapi_version(&value).map_err(Error::UnsupportedVersion)?;
     Ok(value)
@@ -241,6 +251,20 @@ mod tests {
         assert!(matches!(malformed, Err(Error::Malformed(_))));
         #[cfg(feature = "yaml-lean")]
         assert!(matches!(malformed, Err(Error::MalformedYaml(_))));
+    }
+
+    #[test]
+    #[cfg(not(feature = "yaml-lean"))]
+    fn it_reports_the_malformed_error_position_against_the_original_text() {
+        // A `-0` earlier on the same line as the real syntax error would shift the reported
+        // column by one byte per occurrence if the error came from parsing the `-0`-rewritten
+        // text instead of the original.
+        let contents = "{\"a\": -0, \"unterminated";
+        let Err(Error::Malformed(json_error)) = parse(contents) else {
+            panic!("expected a malformed-JSON error");
+        };
+        let expected = serde_json::from_str::<JsonValue>(contents).unwrap_err();
+        assert_eq!(json_error.to_string(), expected.to_string());
     }
 
     #[test]
