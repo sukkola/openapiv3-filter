@@ -16,7 +16,7 @@ fn filtered_3_0_output_round_trips_through_openapiv3() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).expect("stdout was not valid utf-8");
 
-    let parsed: Result<OpenAPI, _> = serde_yaml::from_str(&stdout);
+    let parsed: Result<OpenAPI, _> = openapiv3_filter_core::yaml::from_str(&stdout);
     assert!(
         parsed.is_ok(),
         "filtered 3.0 output failed to deserialize as a structurally valid OpenAPI 3.0 document: {:?}",

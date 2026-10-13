@@ -2,7 +2,6 @@ use clap::Parser;
 
 use openapiv3_filter_core::filter::openapi::{FilteringParameters, OpenAPIFilter};
 use serde_json::Value as JsonValue;
-use serde_yaml::Value as YamlValue;
 use std::fs;
 use std::io::{self, IsTerminal, Read};
 use std::process::ExitCode;
@@ -159,7 +158,7 @@ fn detect_format(input: &str) -> Option<&'static str> {
     if serde_json::from_str::<JsonValue>(input).is_ok() {
         return Some("json");
     }
-    if serde_yaml::from_str::<YamlValue>(input).is_ok() {
+    if openapiv3_filter_core::yaml::from_str::<JsonValue>(input).is_ok() {
         return Some("yaml");
     }
     None
@@ -223,7 +222,7 @@ fn main() -> ExitCode {
                 println!("{}", text_res);
             }
             OutputFormat::Yaml => {
-                let text_res = serde_yaml::to_string(&filtered).unwrap();
+                let text_res = openapiv3_filter_core::yaml::to_string(&filtered).unwrap();
                 println!("{}", text_res);
             }
         }

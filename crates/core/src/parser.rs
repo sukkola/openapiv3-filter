@@ -19,7 +19,7 @@ where
     serde_json::from_str(contents)
 }
 
-/// Parses a YAML string into a struct.
+/// Parses a YAML string into a struct (see [`crate::yaml`] for how YAML is read).
 ///
 /// # Arguments
 ///
@@ -27,12 +27,12 @@ where
 ///
 /// # Returns
 ///
-/// * `Result<T, serde_yaml::Error>` - A Result containing the parsed struct, or a serde_yaml::Error if an error occurs.
-fn parse_yaml<T>(contents: &str) -> Result<T, serde_yaml::Error>
+/// * `Result<T, serde_saphyr::Error>` - A Result containing the parsed struct, or a serde_saphyr::Error if an error occurs.
+fn parse_yaml<T>(contents: &str) -> Result<T, serde_saphyr::Error>
 where
     T: for<'de> Deserialize<'de>,
 {
-    serde_yaml::from_str(contents)
+    crate::yaml::from_str(contents)
 }
 
 /// Checks whether a document's top-level `openapi` field declares a supported

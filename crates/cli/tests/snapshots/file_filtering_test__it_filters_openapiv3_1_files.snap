@@ -2,10 +2,10 @@
 source: crates/cli/tests/file_filtering_test.rs
 expression: result.trim_end()
 ---
-openapi: 3.1.0
+openapi: "3.1.0"
 info:
   title: Full Coverage API
-  version: 1.0.0
+  version: "1.0.0"
   summary: A short summary of this API
 paths: {}
 webhooks:
@@ -19,9 +19,9 @@ webhooks:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UserEvent'
+              $ref: "#/components/schemas/UserEvent"
       responses:
-        '200':
+        "200":
           description: Webhook received
   userDeleted:
     post:
@@ -31,7 +31,7 @@ webhooks:
       - ApiKeyAuth: []
       summary: User deleted event
       responses:
-        '200':
+        "200":
           description: Webhook received
 components:
   schemas:

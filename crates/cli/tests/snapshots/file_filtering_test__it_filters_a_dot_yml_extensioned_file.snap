@@ -2,10 +2,10 @@
 source: crates/cli/tests/file_filtering_test.rs
 expression: result.trim_end()
 ---
-openapi: 3.0.3
+openapi: "3.0.3"
 info:
   title: Minimal API
-  version: 1.0.0
+  version: "1.0.0"
 paths:
   /ping:
     get:
@@ -13,5 +13,5 @@ paths:
       tags:
       - health
       responses:
-        '200':
+        "200":
           description: ok
