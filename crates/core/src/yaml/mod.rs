@@ -76,7 +76,7 @@ pub fn parse_value(text: &str) -> Result<Value, YamlError> {
 pub fn value_to_string(value: &Value) -> Result<String, YamlError> {
     #[cfg(feature = "yaml-lean")]
     {
-        Ok(lean::to_string(value))
+        lean::to_string(value)
     }
     #[cfg(all(feature = "yaml-saphyr", not(feature = "yaml-lean")))]
     {

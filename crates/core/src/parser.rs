@@ -65,18 +65,82 @@ pub fn validate_openapi_version(document: &JsonValue) -> Result<(), String> {
     }
 }
 
-/// Whether `value` contains a negative-zero number anywhere in its tree.
-///
-/// Integers have no negative zero, so `serde_json` can only represent the JSON literal `-0` as
-/// the float `-0.0` — but the YAML engine resolves that same text to the integer `0`. This is the
-/// one case where [`parse_json`] and the YAML engine disagree on a document both accept.
-fn contains_negative_zero(value: &JsonValue) -> bool {
-    match value {
-        JsonValue::Number(n) => n.as_f64().is_some_and(|f| f == 0.0 && f.is_sign_negative()),
-        JsonValue::Array(items) => items.iter().any(contains_negative_zero),
-        JsonValue::Object(map) => map.values().any(contains_negative_zero),
-        _ => false,
+/// Whether `contents` contains the bare JSON integer literal `-0` (not `-0.0`, `-0e1`, `-00`, a
+/// larger number merely ending in `-0`, or `-0` inside a string) anywhere. A cheap, allocation-free
+/// single pass, intended as a pre-check before [`strip_bare_negative_zero_sign`] so the common case
+/// (no `-0` anywhere) costs only this scan and nothing more.
+fn contains_bare_negative_zero(contents: &str) -> bool {
+    let bytes = contents.as_bytes();
+    let mut in_string = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_string {
+            if b == b'\\' && i + 1 < bytes.len() {
+                i += 2;
+                continue;
+            }
+            in_string = b != b'"';
+            i += 1;
+            continue;
+        }
+        match b {
+            b'"' => in_string = true,
+            b'-' if bytes.get(i + 1) == Some(&b'0')
+                && !matches!(bytes.get(i + 2), Some(b'0'..=b'9' | b'.' | b'e' | b'E')) =>
+            {
+                return true;
+            }
+            _ => {}
+        }
+        i += 1;
     }
+    false
+}
+
+/// Rewrites every bare JSON integer literal `-0` to `0`, skipping string content the same way
+/// [`contains_bare_negative_zero`] does. Integers have no negative zero, so `serde_json` can only
+/// represent `-0` as the float `-0.0`, while the YAML engine resolves the same text to the integer
+/// `0`; rewriting the source text keeps the JSON-first fast path exact without a second,
+/// YAML-level parse of the whole document (which could itself fail for an unrelated reason, such
+/// as a duplicate key elsewhere, silently losing the correction).
+fn strip_bare_negative_zero_sign(contents: &str) -> String {
+    let bytes = contents.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut in_string = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_string {
+            out.push(b);
+            if b == b'\\' && i + 1 < bytes.len() {
+                i += 1;
+                out.push(bytes[i]);
+                i += 1;
+                continue;
+            }
+            in_string = b != b'"';
+            i += 1;
+            continue;
+        }
+        if b == b'"' {
+            in_string = true;
+            out.push(b);
+            i += 1;
+            continue;
+        }
+        if b == b'-'
+            && bytes.get(i + 1) == Some(&b'0')
+            && !matches!(bytes.get(i + 2), Some(b'0'..=b'9' | b'.' | b'e' | b'E'))
+        {
+            out.push(b'0'); // drop the '-', keep the '0'
+            i += 2;
+            continue;
+        }
+        out.push(b);
+        i += 1;
+    }
+    String::from_utf8(out).expect("rewriting ASCII bytes of valid UTF-8 text preserves validity")
 }
 
 /// Parses document content already in memory, attempting to parse it as JSON first (much faster
@@ -95,14 +159,9 @@ fn contains_negative_zero(value: &JsonValue) -> bool {
 /// * `Result<Value, Error>` - A Result containing the parsed value tree, or an error if parsing
 ///   or version validation fails.
 pub fn parse(contents: &str) -> Result<JsonValue, Error> {
-    let value = match parse_json::<JsonValue>(contents) {
-        // A document with a `-0` literal is rare enough that re-parsing through the slower YAML
-        // path only when it actually occurs costs nothing in the common case; `contents` is valid
-        // YAML whenever it is valid JSON, so this re-parse does not itself introduce a new way to
-        // fail (and falls back to the JSON result rather than erroring if it somehow did).
-        Ok(result) if contains_negative_zero(&result) => {
-            crate::yaml::parse_value(contents).unwrap_or(result)
-        }
+    let normalized =
+        contains_bare_negative_zero(contents).then(|| strip_bare_negative_zero_sign(contents));
+    let value = match parse_json::<JsonValue>(normalized.as_deref().unwrap_or(contents)) {
         Ok(result) => result,
         Err(json_error) => crate::yaml::parse_value(contents)
             .map_err(|yaml_error| malformed(json_error, yaml_error))?,
@@ -211,6 +270,33 @@ mod tests {
 
         assert_eq!(from_json["v"], json!(0));
         assert_eq!(from_json, from_yaml);
+    }
+
+    #[test]
+    fn it_resolves_a_bare_negative_zero_even_when_the_document_has_a_duplicate_key() {
+        // A regression case: duplicate keys are valid JSON (last value wins) but invalid YAML,
+        // so a fix that corrected `-0` by re-parsing the whole document through the YAML engine
+        // would silently skip the correction here instead of fixing or erroring on it.
+        let value = parse(r#"{"openapi": "3.0.3", "a": 1, "a": -0}"#).unwrap();
+
+        assert_eq!(value["a"], json!(0));
+    }
+
+    #[test]
+    fn it_does_not_touch_negative_zero_shaped_numbers_that_are_not_bare_integers() {
+        let value = parse(r#"{"openapi": "3.0.3", "f": -0.0, "e": -0e1, "ten": -10}"#).unwrap();
+
+        assert!(!value["f"].is_i64());
+        assert!(!value["e"].is_i64());
+        assert_eq!(value["ten"], json!(-10));
+    }
+
+    #[test]
+    fn it_does_not_touch_a_negative_zero_literal_inside_a_string() {
+        let value = parse(r#"{"openapi": "3.0.3", "s": "code -0 here", "e\"d": "-0"}"#).unwrap();
+
+        assert_eq!(value["s"], json!("code -0 here"));
+        assert_eq!(value["e\"d"], json!("-0"));
     }
 
     #[test]

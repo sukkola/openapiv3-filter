@@ -11,21 +11,34 @@ use std::fmt::Write;
 
 use serde_json::Value;
 
+use super::YamlError;
+
 const INDENT: usize = 2;
 const FOLD_COLS: usize = 80;
 
 /// Serializes `value` as a YAML document.
-pub fn to_string(value: &Value) -> String {
+///
+/// `value` need not have come from [`super::parse`] — it can be built programmatically — so this
+/// enforces the same nesting cap ([`super::MAX_DEPTH`]) the parser does, rather than recursing
+/// into a stack overflow on a pathologically deep tree the parser would never have produced.
+pub fn to_string(value: &Value) -> Result<String, YamlError> {
     let mut out = String::new();
     match value {
-        Value::Object(map) if !map.is_empty() => write_map(&mut out, map, 0, false),
-        Value::Array(items) if !items.is_empty() => write_seq(&mut out, items, 0, false),
+        Value::Object(map) if !map.is_empty() => write_map(&mut out, map, 0, false, 0)?,
+        Value::Array(items) if !items.is_empty() => write_seq(&mut out, items, 0, false, 0)?,
         other => {
             write_inline(&mut out, other, 0);
             out.push('\n');
         }
     }
-    out
+    Ok(out)
+}
+
+fn too_deep(depth: usize) -> Result<(), YamlError> {
+    if depth >= super::MAX_DEPTH {
+        return Err(YamlError::new("YAML nesting is too deep"));
+    }
+    Ok(())
 }
 
 fn spaces(out: &mut String, n: usize) {
@@ -37,49 +50,73 @@ fn spaces(out: &mut String, n: usize) {
 type Map = serde_json::Map<String, Value>;
 
 /// Writes a non-empty mapping whose keys sit at column `indent`; when `inline_first` the first key
-/// continues the current line (after a `- `).
-fn write_map(out: &mut String, map: &Map, indent: usize, inline_first: bool) {
+/// continues the current line (after a `- `). `depth` is this map's nesting depth (0 at the root).
+fn write_map(
+    out: &mut String,
+    map: &Map,
+    indent: usize,
+    inline_first: bool,
+    depth: usize,
+) -> Result<(), YamlError> {
+    too_deep(depth)?;
     for (i, (key, value)) in map.iter().enumerate() {
         if !(i == 0 && inline_first) {
             spaces(out, indent);
         }
         write_key(out, key);
         out.push(':');
-        write_value(out, value, indent, true);
+        write_value(out, value, indent, true, depth)?;
     }
+    Ok(())
 }
 
-/// Writes a non-empty sequence whose dashes sit at column `indent`.
-fn write_seq(out: &mut String, items: &[Value], indent: usize, inline_first: bool) {
+/// Writes a non-empty sequence whose dashes sit at column `indent`. `depth` is this sequence's
+/// nesting depth (0 at the root).
+fn write_seq(
+    out: &mut String,
+    items: &[Value],
+    indent: usize,
+    inline_first: bool,
+    depth: usize,
+) -> Result<(), YamlError> {
+    too_deep(depth)?;
     for (i, item) in items.iter().enumerate() {
         if !(i == 0 && inline_first) {
             spaces(out, indent);
         }
         out.push('-');
-        write_value(out, item, indent, false);
+        write_value(out, item, indent, false, depth)?;
     }
+    Ok(())
 }
 
-/// Writes what follows `key:` or `-`. `owner` is the column of that key or dash.
-fn write_value(out: &mut String, value: &Value, owner: usize, in_map: bool) {
+/// Writes what follows `key:` or `-`. `owner` is the column of that key or dash; `depth` is the
+/// nesting depth of the map/sequence this value is a member of.
+fn write_value(
+    out: &mut String,
+    value: &Value,
+    owner: usize,
+    in_map: bool,
+    depth: usize,
+) -> Result<(), YamlError> {
     match value {
         Value::Object(map) if !map.is_empty() => {
             if in_map {
                 out.push('\n');
-                write_map(out, map, owner + INDENT, false);
+                write_map(out, map, owner + INDENT, false, depth + 1)?;
             } else {
                 out.push(' ');
-                write_map(out, map, owner + INDENT, true);
+                write_map(out, map, owner + INDENT, true, depth + 1)?;
             }
         }
         Value::Array(items) if !items.is_empty() => {
             if in_map {
                 // Compact lists: the dashes line up with the key.
                 out.push('\n');
-                write_seq(out, items, owner, false);
+                write_seq(out, items, owner, false, depth + 1)?;
             } else {
                 out.push(' ');
-                write_seq(out, items, owner + INDENT, true);
+                write_seq(out, items, owner + INDENT, true, depth + 1)?;
             }
         }
         _ => {
@@ -88,6 +125,7 @@ fn write_value(out: &mut String, value: &Value, owner: usize, in_map: bool) {
             out.push('\n');
         }
     }
+    Ok(())
 }
 
 /// Writes a scalar or an empty collection, followed by nothing; block scalars end with their

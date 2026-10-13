@@ -220,7 +220,7 @@ fn emitter_is_byte_identical_to_the_engine_on_random_values() {
                 value = Value::Object(m);
             }
             let expected = engine::to_string(&value).unwrap();
-            let actual = ours::to_string(&value);
+            let actual = ours::to_string(&value).unwrap();
             assert_eq!(
                 actual,
                 expected,
@@ -533,7 +533,10 @@ fn parser_and_emitter_agree_on_checked_in_fixtures_and_extra_documents() {
                     continue;
                 }
                 if let Ok(value) = engine::from_str::<Value>(&text) {
-                    let (e, o) = (engine::to_string(&value).unwrap(), ours::to_string(&value));
+                    let (e, o) = (
+                        engine::to_string(&value).unwrap(),
+                        ours::to_string(&value).unwrap(),
+                    );
                     if e != o {
                         let line = e.lines().zip(o.lines()).position(|(a, b)| a != b);
                         failures.push(format!(

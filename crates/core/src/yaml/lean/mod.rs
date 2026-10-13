@@ -327,4 +327,26 @@ mod tests {
         let err = parse(&alias_chain(200)).unwrap_err();
         assert!(err.to_string().contains("too deep"), "{err}");
     }
+
+    /// `n` levels of single-element arrays, built directly rather than through `parse` — the
+    /// emitter must reject this itself, since nothing guarantees a `Value` it is asked to
+    /// serialize ever went through the parser's own depth check.
+    fn nested_array(n: usize) -> Value {
+        let mut v = Value::Array(vec![Value::from(0)]);
+        for _ in 1..n {
+            v = Value::Array(vec![v]);
+        }
+        v
+    }
+
+    #[test]
+    fn it_emits_a_tree_within_the_depth_limit() {
+        assert!(to_string(&nested_array(50)).is_ok());
+    }
+
+    #[test]
+    fn it_rejects_emitting_a_tree_built_programmatically_past_the_depth_limit() {
+        let err = to_string(&nested_array(200)).unwrap_err();
+        assert!(err.to_string().contains("too deep"), "{err}");
+    }
 }
