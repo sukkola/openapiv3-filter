@@ -262,6 +262,31 @@ fn it_handled_piped_input_without_explicit_pipe_marker_without_filtering_json()
     Ok(())
 }
 
+#[test]
+fn it_keeps_components_whose_names_contain_dots_slashes_or_tildes() -> Result<(), Box<dyn std::error::Error>> {
+    let bin_path = assert_cmd::cargo::cargo_bin("openapiv3-filter");
+
+    let output = Command::new(bin_path)
+        .args(["--path", "/auth", "tests/resources/special-component-names.json"])
+        .output()?;
+    assert!(output.status.success());
+
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    let mut schemas: Vec<&str> = document["components"]["schemas"]
+        .as_object()
+        .expect("schemas are kept")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    schemas.sort();
+    assert_eq!(
+        schemas,
+        vec!["Foo Bar", "a/b", "billing.feedback_option", "issuing.authorization", "til~de"]
+    );
+    assert!(document["components"]["responses"]["not.found"].is_object());
+    Ok(())
+}
+
 fn define_command(bin_path: PathBuf, command: String) -> Command {
     let mut cmd = Command::new(bin_path);
     cmd.args(command.split(" "));

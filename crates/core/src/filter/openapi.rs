@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use wildmatch::WildMatch;
 
 use crate::filter::content::json_path_filter;
+use crate::filter::content::pointer;
 use crate::filter::content::reference_collector;
 use crate::filter::content::reference_collector::{
     collect_operation_securities, collect_operation_tags, collect_path_refs,
@@ -161,8 +162,21 @@ fn resolve_operations_source<'a>(item: &'a Value, doc: &'a Value) -> Cow<'a, Val
 
 /// Resolves a `#/a/b/c`-style JSON reference string into the referenced value in `doc`.
 fn resolve_json_pointer<'a>(doc: &'a Value, reference: &str) -> Option<&'a Value> {
-    let pointer = reference.strip_prefix('#').unwrap_or(reference);
-    doc.pointer(pointer)
+    match pointer::ref_segments(reference) {
+        Some(segments) => {
+            let mut current = doc;
+            for segment in &segments {
+                current = match current {
+                    Value::Object(map) => map.get(segment)?,
+                    Value::Array(items) => items.get(segment.parse::<usize>().ok()?)?,
+                    _ => return None,
+                };
+            }
+            Some(current)
+        }
+        // `#` alone is the document root; other shapes (external refs) are not resolvable here.
+        None => (reference == "#").then_some(doc),
+    }
 }
 
 /// Returns true if an operation value matches the active method/tag/security filters. An empty
@@ -439,18 +453,25 @@ fn found_refs_to_components(doc: &Value, referenced: &mut HashSet<String>) -> Op
     // `get_kept_references` needs the *full* reference graph to walk multi-hop chains
     // transitively (A -> B -> C, ...); pre-filtering it down to only entries already in
     // `referenced` would strand any node reachable only through an intermediate hop.
-    let final_references = reference_processor::get_kept_references(&component_references, referenced);
+    //
+    // The graph's keys and edges are in canonical JSON Pointer form, so the directly-referenced
+    // set is normalised the same way before the walk (`$ref`s in operations are raw strings).
+    let referenced: HashSet<String> = referenced
+        .iter()
+        .map(|reference| pointer::canonical_ref(reference))
+        .collect();
+    let final_references = reference_processor::get_kept_references(&component_references, &referenced);
 
-    let component_json_paths: Vec<String> = final_references
+    // Keep paths as segment lists rather than dot-joined strings: component names such as
+    // `issuing.authorization` contain dots and must stay one key.
+    let component_paths: Vec<Vec<String>> = final_references
         .iter()
         .filter(|component| component.starts_with("#/components/"))
-        .map(|component| &component[13..])
-        .map(|component| component.split('/').collect::<Vec<_>>().join("."))
+        .filter_map(|component| pointer::ref_segments(component))
+        .map(|segments| segments[1..].to_vec())
         .collect();
-    let component_json_path_refs: Vec<&str> =
-        component_json_paths.iter().map(String::as_str).collect();
 
-    json_path_filter::filter_json(components, &component_json_path_refs)
+    json_path_filter::filter_json_segments(components, &component_paths)
 }
 
 /// Filters the top-level `tags` array down to the tag names actually used by kept operations.

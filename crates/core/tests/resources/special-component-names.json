@@ -1,0 +1,75 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Special component names", "version": "1.0.0" },
+  "paths": {
+    "/auth": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/issuing.authorization" } }
+            }
+          },
+          "404": { "$ref": "#/components/responses/not.found" }
+        }
+      }
+    },
+    "/encoded": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/issuing%2Eauthorization" } }
+            }
+          }
+        }
+      }
+    },
+    "/other": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Plain" } }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "not.found": { "description": "missing" },
+      "unused.response": { "description": "never referenced" }
+    },
+    "schemas": {
+      "issuing.authorization": {
+        "type": "object",
+        "properties": {
+          "slash": { "$ref": "#/components/schemas/a~1b" },
+          "option": { "$ref": "#/components/schemas/billing.feedback_option" }
+        }
+      },
+      "a/b": {
+        "type": "object",
+        "properties": {
+          "tilde": { "$ref": "#/components/schemas/til~0de" }
+        }
+      },
+      "til~de": {
+        "type": "object",
+        "properties": {
+          "spaced": { "$ref": "#/components/schemas/Foo%20Bar" }
+        }
+      },
+      "Foo Bar": { "type": "string" },
+      "billing.feedback_option": { "type": "string", "enum": ["yes", "no"] },
+      "Plain": { "type": "object" },
+      "Unused.dotted": { "type": "object" },
+      "x/unused": { "type": "object" }
+    }
+  }
+}

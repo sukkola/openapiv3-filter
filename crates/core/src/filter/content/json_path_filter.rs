@@ -20,6 +20,22 @@ pub fn filter_json(value: &Value, paths: &[&str]) -> Option<Value> {
     filter_value(value, &path_parts, &[])
 }
 
+/// Like [`filter_json`], but each path is given as a list of already-separated segments, so keys
+/// that themselves contain `.` (e.g. the component name `issuing.authorization`) are matched as a
+/// single key instead of being split into several.
+///
+/// # Returns
+///
+/// * `Option<Value>` - An Option containing the filtered JSON value, or None if no paths match.
+pub fn filter_json_segments(value: &Value, paths: &[Vec<String>]) -> Option<Value> {
+    let path_parts: Vec<Vec<&str>> = paths
+        .iter()
+        .map(|path| path.iter().map(String::as_str).collect())
+        .collect();
+
+    filter_value(value, &path_parts, &[])
+}
+
 /// Recursively filters a JSON value based on the provided paths.
 ///
 /// This function recursively traverses the JSON value, filtering it based on the provided paths.
@@ -283,5 +299,27 @@ mod tests {
         });
 
         assert_eq!(filtered, expected);
+    }
+
+    #[test]
+    fn it_matches_segment_paths_whose_keys_contain_dots() {
+        let json = json!({
+            "schemas": {
+                "issuing.authorization": { "type": "object" },
+                "issuing": { "authorization": "decoy" },
+                "Other": { "type": "string" }
+            }
+        });
+
+        let paths = vec![vec!["schemas".to_string(), "issuing.authorization".to_string()]];
+        let filtered = filter_json_segments(&json, &paths).unwrap();
+
+        assert_eq!(
+            filtered,
+            json!({ "schemas": { "issuing.authorization": { "type": "object" } } })
+        );
+        // The dot-separated form cannot express that key: it addresses the nested decoy instead.
+        let dotted = filter_json(&json, &["schemas.issuing.authorization"]).unwrap();
+        assert_eq!(dotted, json!({ "schemas": { "issuing": { "authorization": "decoy" } } }));
     }
 }
