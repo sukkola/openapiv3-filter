@@ -108,6 +108,24 @@ Add it as a path/git dependency, or once published, from crates.io:
 openapiv3-filter-core = "0.1"
 ```
 
+YAML is read and written by `serde-saphyr` by default. Size-sensitive builds (notably
+`wasm32-unknown-unknown`) can switch to a small in-crate YAML layer, which roughly halves the wasm
+module, with `default-features = false, features = ["yaml-lean"]`:
+
+```toml
+[dependencies]
+openapiv3-filter-core = { version = "0.1", default-features = false, features = ["yaml-lean"] }
+```
+
+| feature | YAML implementation | syntax errors | notes |
+|---------|---------------------|---------------|-------|
+| `yaml-saphyr` (default) | `serde-saphyr` | `Error::Malformed` (JSON error) | used by the CLI |
+| `yaml-lean` | in-crate layer on `granit-parser` (`crates/core/src/yaml/lean`) | `Error::MalformedYaml` (parser message and position) | `!!binary` rejected, alias limits approximated; see its `NOTICE.md` |
+
+Both read and write the same documents (checked by differential tests); at least one feature must
+be enabled and, because Cargo features are additive, `yaml-lean` wins when both are on. The CLI
+always uses the default `yaml-saphyr`.
+
 ## Repository layout
 
 This repository is a Cargo workspace with two members:
@@ -120,7 +138,16 @@ This repository is a Cargo workspace with two members:
 
 ## Development
 
-Run the full workspace test suite with `cargo test --workspace`. Snapshot tests use
+Run the full workspace test suite with `cargo test --workspace`. The lean YAML layer is tested
+separately, alone and against the default implementation:
+
+```sh
+cargo test -p openapiv3-filter-core --no-default-features --features yaml-lean
+cargo test -p openapiv3-filter-core --features yaml-lean --test yaml_differential
+# optionally also compare large real-world documents (.yaml/.yml/.json):
+YAML_DIFF_DIR=/path/to/specs cargo test -p openapiv3-filter-core --features yaml-lean --release
+```
+ Snapshot tests use
 [`insta`](https://insta.rs/); after an intentional output change, review and accept with
 `cargo insta review` (or `cargo insta accept`).
 

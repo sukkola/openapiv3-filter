@@ -39,6 +39,17 @@ jobs:
         run: cross build -p openapiv3-filter --target ${{ matrix.target }} --release
       - name: Run tests
         run: cross test --workspace --target ${{ matrix.target }} --release
+      - name: Lint (yaml-lean only)
+        run: cargo clippy -p openapiv3-filter-core --no-default-features --features yaml-lean --all-targets
+      - name: Test (yaml-lean only, plus differential tests against yaml-saphyr)
+        run: |
+          cargo test -p openapiv3-filter-core --no-default-features --features yaml-lean
+          cargo test -p openapiv3-filter-core --features yaml-lean
+      - name: Check wasm32 build (both YAML implementations)
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo check -p openapiv3-filter-core --target wasm32-unknown-unknown
+          cargo check -p openapiv3-filter-core --no-default-features --features yaml-lean --target wasm32-unknown-unknown
       - name: Check test coverage
         # Minimum line coverage for crates/core/src/parser.rs,
         # crates/core/src/filter/openapi.rs, and crates/core/src/filter/content/* (the
