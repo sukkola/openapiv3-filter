@@ -155,6 +155,28 @@ mod tests {
     }
 
     #[test]
+    fn it_rejects_a_mapping_key_tagged_as_a_non_string_type() {
+        // A mapping key always ends up as a JSON object's string key; both implementations
+        // reject a tag that asserts some other type, regardless of whether the tag and text
+        // would even be compatible on their own.
+        assert!(parse_value("!!int notanumber: v").is_err());
+        assert!(parse_value("!!int 1: v").is_err());
+        assert!(parse_value("!!bool notabool: v").is_err());
+        assert!(parse_value("!!float .inf: v").is_err());
+    }
+
+    #[test]
+    fn it_accepts_a_mapping_key_whose_tag_is_compatible_with_a_string() {
+        // Unlike an int/bool/float/null tag, these are all fine as a plain key: no tag, the
+        // non-specific `!`/`!!`, an explicit `!!str`, and an untagged non-finite-looking text
+        // (which, lacking a tag, is never even asked to resolve to a number).
+        assert_eq!(parse_value("a: v").unwrap()["a"], json!("v"));
+        assert_eq!(parse_value("! a: v").unwrap()["a"], json!("v"));
+        assert_eq!(parse_value("!!str a: v").unwrap()["a"], json!("v"));
+        assert_eq!(parse_value(".inf: v").unwrap()[".inf"], json!("v"));
+    }
+
+    #[test]
     fn it_round_trips_scalars_that_would_otherwise_change_type() {
         let value = json!({ "version": "1.0.0", "code": "200", "flag": "y", "n": 1.5, "z": null });
 

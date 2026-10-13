@@ -173,6 +173,23 @@ pub fn parse(text: &str) -> Result<Value, YamlError> {
                     ))
                 };
                 if matches!(b.stack.last(), Some(Frame::Map { key: None, .. })) {
+                    // A mapping key always ends up as a JSON object's string key. The engine
+                    // accepts a tag compatible with that — no tag, the non-specific `!`/`!!`,
+                    // `!!str`, or any tag it does not itself recognise, all of which `classify`
+                    // maps to `Str` or `Implicit` — but rejects one that asserts a genuinely
+                    // different type, regardless of whether the tag and text would even be
+                    // compatible on their own (so `!!int notanumber: v` is rejected the same way
+                    // `!!int 1: v` is, even though only one of them is an "invalid" integer).
+                    if matches!(
+                        scalar::classify(tag.as_deref()),
+                        scalar::Kind::Null
+                            | scalar::Kind::Bool
+                            | scalar::Kind::Int
+                            | scalar::Kind::Float
+                            | scalar::Kind::Unsupported
+                    ) {
+                        return Err(at("a mapping key cannot have this tag".into()));
+                    }
                     if scalar::is_nullish(&text, style, tag.as_deref()) {
                         return Err(at(
                             "a null mapping key cannot be used as a string key".into()
@@ -182,8 +199,12 @@ pub fn parse(text: &str) -> Result<Value, YamlError> {
                         *key = Some(text.to_string());
                     }
                     // The anchor's value is the key's resolved scalar (e.g. the number `200` for
-                    // `&code 200:`), not its string spelling: an alias to this anchor used in a
-                    // *value* position must come back as that scalar, not the text.
+                    // `&code 200:`), not its string spelling, so an alias to this anchor used in
+                    // a *value* position comes back as that scalar. The only way `resolve` can
+                    // still fail here, given the tag was just accepted above, is an untagged,
+                    // numeral-shaped but non-finite text like `.inf`: the engine accepts that as
+                    // a plain key without ever attempting to resolve it to a number, so this
+                    // falls back to the key's own text the same way.
                     let resolved = scalar::resolve(&text, style, tag.as_deref())
                         .unwrap_or_else(|_| Value::String(text.to_string()));
                     b.anchor(anchor, &resolved, 1, 0, Some(&text))?;

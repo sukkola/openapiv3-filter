@@ -65,6 +65,20 @@ pub fn validate_openapi_version(document: &JsonValue) -> Result<(), String> {
     }
 }
 
+/// Whether `value` contains a negative-zero number anywhere in its tree.
+///
+/// Integers have no negative zero, so `serde_json` can only represent the JSON literal `-0` as
+/// the float `-0.0` — but the YAML engine resolves that same text to the integer `0`. This is the
+/// one case where [`parse_json`] and the YAML engine disagree on a document both accept.
+fn contains_negative_zero(value: &JsonValue) -> bool {
+    match value {
+        JsonValue::Number(n) => n.as_f64().is_some_and(|f| f == 0.0 && f.is_sign_negative()),
+        JsonValue::Array(items) => items.iter().any(contains_negative_zero),
+        JsonValue::Object(map) => map.values().any(contains_negative_zero),
+        _ => false,
+    }
+}
+
 /// Parses document content already in memory, attempting to parse it as JSON first (much faster
 /// than the YAML parser, and the common case for machine-generated documents), then as YAML. The
 /// parsed value is then checked for a supported `openapi` version before being returned.
@@ -82,6 +96,13 @@ pub fn validate_openapi_version(document: &JsonValue) -> Result<(), String> {
 ///   or version validation fails.
 pub fn parse(contents: &str) -> Result<JsonValue, Error> {
     let value = match parse_json::<JsonValue>(contents) {
+        // A document with a `-0` literal is rare enough that re-parsing through the slower YAML
+        // path only when it actually occurs costs nothing in the common case; `contents` is valid
+        // YAML whenever it is valid JSON, so this re-parse does not itself introduce a new way to
+        // fail (and falls back to the JSON result rather than erroring if it somehow did).
+        Ok(result) if contains_negative_zero(&result) => {
+            crate::yaml::parse_value(contents).unwrap_or(result)
+        }
         Ok(result) => result,
         Err(json_error) => crate::yaml::parse_value(contents)
             .map_err(|yaml_error| malformed(json_error, yaml_error))?,
@@ -181,6 +202,15 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(keys(&from_json), keys(&from_yaml));
+    }
+
+    #[test]
+    fn it_resolves_a_bare_negative_zero_the_same_way_regardless_of_input_format() {
+        let from_json = parse(r#"{"openapi": "3.0.3", "v": -0}"#).unwrap();
+        let from_yaml = parse("openapi: 3.0.3\nv: -0\n").unwrap();
+
+        assert_eq!(from_json["v"], json!(0));
+        assert_eq!(from_json, from_yaml);
     }
 
     #[test]
