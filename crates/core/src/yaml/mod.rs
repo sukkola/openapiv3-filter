@@ -148,6 +148,13 @@ mod tests {
     }
 
     #[test]
+    fn it_resolves_an_anchored_mapping_key_to_its_type_when_aliased_as_a_value() {
+        let value = parse_value("openapi: 3.0.3\n&code 200: ok\nexample: *code\n").unwrap();
+
+        assert_eq!(value["example"], json!(200));
+    }
+
+    #[test]
     fn it_round_trips_scalars_that_would_otherwise_change_type() {
         let value = json!({ "version": "1.0.0", "code": "200", "flag": "y", "n": 1.5, "z": null });
 

@@ -41,20 +41,24 @@ enum Frame {
         anchor: usize,
         items: Vec<Value>,
         nodes: usize,
+        /// Greatest depth (see [`Builder::put`]) of any child put into this frame so far.
+        depth: usize,
     },
     Map {
         anchor: usize,
         entries: Map<String, Value>,
         key: Option<String>,
         nodes: usize,
+        /// Greatest depth (see [`Builder::put`]) of any child put into this frame so far.
+        depth: usize,
     },
 }
 
 struct Builder {
     stack: Vec<Frame>,
-    /// Finished anchored nodes, the number of nodes each contains, and for scalars the text a
-    /// mapping key spelled with an alias would take.
-    anchors: HashMap<usize, (Value, usize, Option<String>)>,
+    /// Finished anchored nodes: the value, the number of nodes it contains, its depth (see
+    /// [`Builder::put`]), and for scalars the text a mapping key spelled with an alias would take.
+    anchors: HashMap<usize, (Value, usize, usize, Option<String>)>,
     root: Option<Value>,
     documents: usize,
     aliases: usize,
@@ -62,20 +66,29 @@ struct Builder {
 }
 
 impl Builder {
-    /// Hands a finished node (`nodes` nodes in total) to its parent.
-    fn put(&mut self, value: Value, nodes: usize) -> Result<(), YamlError> {
+    /// Hands a finished node to its parent: `nodes` nodes in total, nested `depth` containers deep
+    /// at most (0 for a scalar; a container is one more than its deepest child, 0 if it has none).
+    /// This is the same notion of depth [`Builder::push`] enforces structurally; it is tracked
+    /// separately here because a replayed alias can introduce nesting no `push` call sees (the
+    /// node was already built once, when its anchor was first defined).
+    fn put(&mut self, value: Value, nodes: usize, depth: usize) -> Result<(), YamlError> {
         match self.stack.last_mut() {
             None => self.root = Some(value),
             Some(Frame::Seq {
-                items, nodes: n, ..
+                items,
+                nodes: n,
+                depth: d,
+                ..
             }) => {
                 items.push(value);
                 *n += nodes;
+                *d = (*d).max(depth);
             }
             Some(Frame::Map {
                 entries,
                 key,
                 nodes: n,
+                depth: d,
                 ..
             }) => {
                 let Some(key) = key.take() else {
@@ -85,6 +98,7 @@ impl Builder {
                     return err(format!("duplicate mapping key `{key}`"));
                 }
                 *n += nodes;
+                *d = (*d).max(depth);
             }
         }
         Ok(())
@@ -95,14 +109,17 @@ impl Builder {
         id: usize,
         value: &Value,
         nodes: usize,
+        depth: usize,
         key_text: Option<&str>,
     ) -> Result<(), YamlError> {
         if id != 0 {
             if self.anchors.len() >= MAX_ANCHORS {
                 return err("too many YAML anchors");
             }
-            self.anchors
-                .insert(id, (value.clone(), nodes, key_text.map(str::to_owned)));
+            self.anchors.insert(
+                id,
+                (value.clone(), nodes, depth, key_text.map(str::to_owned)),
+            );
         }
         Ok(())
     }
@@ -164,12 +181,17 @@ pub fn parse(text: &str) -> Result<Value, YamlError> {
                     if let Some(Frame::Map { key, .. }) = b.stack.last_mut() {
                         *key = Some(text.to_string());
                     }
-                    b.anchor(anchor, &Value::String(text.to_string()), 1, Some(&text))?;
+                    // The anchor's value is the key's resolved scalar (e.g. the number `200` for
+                    // `&code 200:`), not its string spelling: an alias to this anchor used in a
+                    // *value* position must come back as that scalar, not the text.
+                    let resolved = scalar::resolve(&text, style, tag.as_deref())
+                        .unwrap_or_else(|_| Value::String(text.to_string()));
+                    b.anchor(anchor, &resolved, 1, 0, Some(&text))?;
                     continue;
                 }
                 let value = scalar::resolve(&text, style, tag.as_deref()).map_err(at)?;
-                b.anchor(anchor, &value, 1, Some(&text))?;
-                b.put(value, 1)?;
+                b.anchor(anchor, &value, 1, 0, Some(&text))?;
+                b.put(value, 1, 0)?;
             }
             Event::SequenceStart(_, anchor, tag) => {
                 check_tag(tag.as_deref(), scalar::Node::Sequence)?;
@@ -177,6 +199,7 @@ pub fn parse(text: &str) -> Result<Value, YamlError> {
                     anchor,
                     items: Vec::new(),
                     nodes: 1,
+                    depth: 0,
                 })?;
             }
             Event::MappingStart(_, anchor, tag) => {
@@ -186,28 +209,31 @@ pub fn parse(text: &str) -> Result<Value, YamlError> {
                     entries: Map::new(),
                     key: None,
                     nodes: 1,
+                    depth: 0,
                 })?;
             }
             Event::SequenceEnd | Event::MappingEnd => {
                 let Some(frame) = b.stack.pop() else {
                     return err("unbalanced YAML collection");
                 };
-                let (anchor, value, nodes) = match frame {
+                let (anchor, value, nodes, depth) = match frame {
                     Frame::Seq {
                         anchor,
                         items,
                         nodes,
-                    } => (anchor, Value::Array(items), nodes),
+                        depth,
+                    } => (anchor, Value::Array(items), nodes, depth + 1),
                     Frame::Map {
                         anchor,
                         entries,
                         key: None,
                         nodes,
-                    } => (anchor, Value::Object(entries), nodes),
+                        depth,
+                    } => (anchor, Value::Object(entries), nodes, depth + 1),
                     Frame::Map { .. } => return err("mapping key without a value"),
                 };
-                b.anchor(anchor, &value, nodes, None)?;
-                b.put(value, nodes)?;
+                b.anchor(anchor, &value, nodes, depth, None)?;
+                b.put(value, nodes, depth)?;
             }
             Event::Alias(id) => {
                 b.aliases += 1;
@@ -217,7 +243,7 @@ pub fn parse(text: &str) -> Result<Value, YamlError> {
                 {
                     return err("too many YAML aliases");
                 }
-                let Some((value, nodes, key_text)) = b.anchors.get(&id) else {
+                let Some((value, nodes, depth, key_text)) = b.anchors.get(&id) else {
                     return err("alias refers to an unknown or still open anchor");
                 };
                 if matches!(b.stack.last(), Some(Frame::Map { key: None, .. })) {
@@ -232,16 +258,52 @@ pub fn parse(text: &str) -> Result<Value, YamlError> {
                     }
                     continue;
                 }
-                let (value, nodes) = (value.clone(), *nodes);
+                // The anchor's own structural depth was already bounded by `push` when it was
+                // first built; what `push` cannot see is this replay adding it on top of the
+                // nesting already open here, which is exactly how a chain of anchors (each
+                // wrapping the previous alias) can build a tree far deeper than any single
+                // `push` call witnessed.
+                if b.stack.len() + depth > MAX_DEPTH {
+                    return err("YAML nesting is too deep");
+                }
+                let (value, nodes, depth) = (value.clone(), *nodes, *depth);
                 b.replayed += nodes;
                 if b.replayed > MAX_REPLAYED_NODES {
                     return err("YAML alias expansion is too large");
                 }
-                b.put(value, nodes)?;
+                b.put(value, nodes, depth)?;
             }
             _ => {}
         }
     }
 
     Ok(b.root.unwrap_or(Value::Null))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `a0: &a0 [0]`, `a1: &a1 [*a0]`, ... each one element deeper than the last via an alias, not
+    /// direct nesting: `push` never sees more than two open frames (the root mapping and the
+    /// current list) however long the chain, so only the depth check on the alias itself can
+    /// catch a chain long enough to build a tree past `MAX_DEPTH`.
+    fn alias_chain(n: usize) -> String {
+        let mut s = String::from("a0: &a0 [0]\n");
+        for i in 1..n {
+            s.push_str(&format!("a{i}: &a{i} [*a{}]\n", i - 1));
+        }
+        s
+    }
+
+    #[test]
+    fn it_accepts_an_alias_chain_within_the_depth_limit() {
+        assert!(parse(&alias_chain(50)).is_ok());
+    }
+
+    #[test]
+    fn it_rejects_an_alias_chain_that_would_build_a_tree_past_the_depth_limit() {
+        let err = parse(&alias_chain(200)).unwrap_err();
+        assert!(err.to_string().contains("too deep"), "{err}");
+    }
 }
