@@ -158,7 +158,7 @@ fn detect_format(input: &str) -> Option<&'static str> {
     if serde_json::from_str::<JsonValue>(input).is_ok() {
         return Some("json");
     }
-    if openapiv3_filter_core::yaml::from_str::<JsonValue>(input).is_ok() {
+    if openapiv3_filter_core::yaml::parse_value(input).is_ok() {
         return Some("yaml");
     }
     None
@@ -222,7 +222,7 @@ fn main() -> ExitCode {
                 println!("{}", text_res);
             }
             OutputFormat::Yaml => {
-                let text_res = openapiv3_filter_core::yaml::to_string(&filtered).unwrap();
+                let text_res = openapiv3_filter_core::yaml::value_to_string(&filtered).unwrap();
                 println!("{}", text_res);
             }
         }
