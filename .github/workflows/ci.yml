@@ -57,4 +57,11 @@ jobs:
         # openspec/changes/full-openapi-3-0-3-1-support/traceability.md. Set comfortably
         # below the ~98-100% currently achieved per file so incidental variance doesn't
         # flake the build, while still catching a real coverage regression.
-        run: cargo llvm-cov --workspace --summary-only --fail-under-file-lines 90
+        #
+        # --features yaml-lean (default-features still on, so yaml-saphyr stays enabled too)
+        # is required for this to measure crates/core/src/yaml/lean/* at all: that module is
+        # compiled out entirely without the feature, and most of its own coverage comes from
+        # tests/yaml_differential.rs, which only runs (and only compiles) when both YAML
+        # features are enabled together — yaml-lean alone, without yaml-saphyr, does not
+        # exercise it anywhere near as thoroughly.
+        run: cargo llvm-cov --workspace --features yaml-lean --summary-only --fail-under-file-lines 90
