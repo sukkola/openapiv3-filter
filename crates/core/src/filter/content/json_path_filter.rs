@@ -32,6 +32,13 @@ pub fn filter_json_segments(value: &Value, paths: &[Vec<String>]) -> Option<Valu
     filter_node(value, &trie)
 }
 
+/// Like [`filter_json_segments`], but takes the value by value and moves the kept parts into the
+/// result instead of copying them.
+pub fn filter_json_segments_owned(value: Value, paths: &[Vec<String>]) -> Option<Value> {
+    let trie = PathTrie::from_paths(paths.iter().map(|path| path.iter().map(String::as_str)));
+    filter_node_owned(value, &trie)
+}
+
 /// Recursively filters a JSON value based on the provided paths.
 ///
 /// This function recursively traverses the JSON value, filtering it based on the provided paths.
@@ -112,6 +119,41 @@ fn filter_node(value: &Value, node: &PathTrie) -> Option<Value> {
         }
         // A scalar is kept only when the current path is one of the requested paths.
         _ => node.terminal.then(|| value.clone()),
+    }
+}
+
+/// [`filter_node`] for an owned value: the same result, with kept values moved rather than copied.
+fn filter_node_owned(value: Value, node: &PathTrie) -> Option<Value> {
+    match value {
+        Value::Object(map) => {
+            let filtered_obj = if node.children.is_empty() {
+                if node.terminal { map } else { Map::new() }
+            } else {
+                map.into_iter()
+                    .filter_map(|(key, value)| match node.children.get(key.as_str()) {
+                        Some(child) => filter_node_owned(value, child).map(|value| (key, value)),
+                        None => node.terminal.then_some((key, value)),
+                    })
+                    .collect()
+            };
+            if filtered_obj.is_empty() {
+                None
+            } else {
+                Some(Value::Object(filtered_obj))
+            }
+        }
+        Value::Array(arr) => {
+            let filtered: Vec<Value> = arr
+                .into_iter()
+                .filter_map(|item| filter_node_owned(item, node))
+                .collect();
+            if filtered.is_empty() {
+                None
+            } else {
+                Some(Value::Array(filtered))
+            }
+        }
+        _ => node.terminal.then_some(value),
     }
 }
 
@@ -316,6 +358,39 @@ mod tests {
         });
 
         assert_eq!(filtered, expected);
+    }
+
+    #[test]
+    fn the_owned_variant_agrees_with_the_borrowed_one() {
+        let json = json!({
+            "s": {
+                "Empty": {}, "EmptyArr": [], "Prim": 1,
+                "A": [{}, [], 1, { "x": {} }, [[]], [2]],
+                "B": { "p": { "k": 1 }, "q": 2 },
+                "C": { "r": [{ "t": {} }] }
+            },
+            "o": { "z": 1 }
+        });
+        let path_sets: Vec<Vec<Vec<&str>>> = vec![
+            vec![],
+            vec![vec![]],
+            vec![vec!["s"]],
+            vec![vec!["s"], vec!["s", "B", "p"]],
+            vec![vec!["s", "Empty"], vec!["s", "EmptyArr"], vec!["s", "Prim"], vec!["s", "A"]],
+            vec![vec!["s", "C", "r", "t"], vec!["o", "z"], vec!["missing"]],
+            vec![vec!["s", "Prim", "deeper"]],
+        ];
+        for paths in path_sets {
+            let paths: Vec<Vec<String>> = paths
+                .iter()
+                .map(|path| path.iter().map(|s| s.to_string()).collect())
+                .collect();
+            assert_eq!(
+                filter_json_segments_owned(json.clone(), &paths),
+                filter_json_segments(&json, &paths),
+                "{paths:?}"
+            );
+        }
     }
 
     #[test]

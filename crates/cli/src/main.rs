@@ -191,7 +191,7 @@ fn main() -> ExitCode {
     let result: Result<(), Box<dyn std::error::Error>> = (|| -> Result<(), Box<dyn std::error::Error>> {
         let contents = read_input(&file_name)?;
         let (document, source_format) = parser::parse_with_format(&contents)?;
-        let filtered = document.filter_by_parameters(FilteringParameters {
+        let filtered = document.into_filtered(FilteringParameters {
             paths: path_names,
             webhooks: webhook_names,
             methods: http_methods,
