@@ -85,6 +85,16 @@ fn is_bare_negative_zero_at(bytes: &[u8], i: usize) -> bool {
 /// anywhere) costs only this scan and nothing more.
 fn contains_bare_negative_zero(contents: &str) -> bool {
     let bytes = contents.as_bytes();
+    // Every match the scan below can find is in particular a `-0` passing the context check, so
+    // a (fast, substring-search) look for such a candidate settles the common case without
+    // tracking string state byte by byte. `-0` inside text, as in a date, mostly fails the check
+    // already (it follows a digit), so real documents rarely need the full scan at all.
+    if !contents
+        .match_indices("-0")
+        .any(|(i, _)| is_bare_negative_zero_at(bytes, i))
+    {
+        return false;
+    }
     let mut in_string = false;
     let mut i = 0;
     while i < bytes.len() {
@@ -369,6 +379,20 @@ mod tests {
         let value = parse(r#"{"openapi": "3.0.3", "v": --0}"#).unwrap();
 
         assert_eq!(value["v"], json!("--0"));
+    }
+
+    #[test]
+    fn it_finds_a_bare_negative_zero_only_outside_strings() {
+        // No candidate at all, and `-0` only inside text after a digit (as in a date).
+        assert!(!contains_bare_negative_zero(r#"{"a": 1}"#));
+        assert!(!contains_bare_negative_zero(r#"{"d": "2019-02-19", "n": 3-0}"#));
+        // A candidate that passes the context check, but only inside a string.
+        assert!(!contains_bare_negative_zero(r#"{"s": "x -0 y", "t": "[-0]"}"#));
+        assert!(!contains_bare_negative_zero(r#"{"s": "q\" -0"}"#));
+        // A real one, also after a string holding a candidate.
+        assert!(contains_bare_negative_zero(r#"{"s": "x -0", "v": -0}"#));
+        assert!(contains_bare_negative_zero("[-0]"));
+        assert!(contains_bare_negative_zero("-0"));
     }
 
     #[test]
