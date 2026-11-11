@@ -166,10 +166,26 @@ fn strip_bare_negative_zero_sign(contents: &str) -> String {
 /// * `Result<Value, Error>` - A Result containing the parsed value tree, or an error if parsing
 ///   or version validation fails.
 pub fn parse(contents: &str) -> Result<JsonValue, Error> {
+    parse_with_format(contents).map(|(value, _)| value)
+}
+
+/// The syntax [`parse_with_format`] read a document as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceFormat {
+    /// The content is valid JSON.
+    Json,
+    /// The content is not valid JSON, and was read as YAML.
+    Yaml,
+}
+
+/// Like [`parse`], but also reports whether the content was read as JSON or as YAML, so a caller
+/// that wants to echo the input format back (as the CLI does for stdin) does not have to parse
+/// the content a second time to find out.
+pub fn parse_with_format(contents: &str) -> Result<(JsonValue, SourceFormat), Error> {
     let normalized =
         contains_bare_negative_zero(contents).then(|| strip_bare_negative_zero_sign(contents));
-    let value = match parse_json::<JsonValue>(normalized.as_deref().unwrap_or(contents)) {
-        Ok(result) => result,
+    let (value, format) = match parse_json::<JsonValue>(normalized.as_deref().unwrap_or(contents)) {
+        Ok(result) => (result, SourceFormat::Json),
         Err(rewritten_error) => {
             // If a `-0` rewrite happened, `rewritten_error`'s position was computed against the
             // rewritten text; re-derive it against the original so a reported line/column
@@ -184,12 +200,13 @@ pub fn parse(contents: &str) -> Result<JsonValue, Error> {
             } else {
                 rewritten_error
             };
-            crate::yaml::parse_value(contents)
-                .map_err(|yaml_error| malformed(json_error, yaml_error))?
+            let value = crate::yaml::parse_value(contents)
+                .map_err(|yaml_error| malformed(json_error, yaml_error))?;
+            (value, SourceFormat::Yaml)
         }
     };
     validate_openapi_version(&value).map_err(Error::UnsupportedVersion)?;
-    Ok(value)
+    Ok((value, format))
 }
 
 #[cfg(test)]
@@ -352,6 +369,18 @@ mod tests {
         let value = parse(r#"{"openapi": "3.0.3", "v": --0}"#).unwrap();
 
         assert_eq!(value["v"], json!("--0"));
+    }
+
+    #[test]
+    fn it_reports_the_format_the_content_was_read_as() {
+        let json = parse_with_format(r#"{"openapi": "3.0.3", "v": -0}"#).unwrap();
+        let yaml = parse_with_format("openapi: 3.0.3\nv: -0\n").unwrap();
+        let flow = parse_with_format("{openapi: '3.1.0'}").unwrap();
+
+        assert_eq!(json.1, SourceFormat::Json);
+        assert_eq!(yaml.1, SourceFormat::Yaml);
+        assert_eq!(flow.1, SourceFormat::Yaml);
+        assert_eq!(json.0, yaml.0);
     }
 
     #[test]
