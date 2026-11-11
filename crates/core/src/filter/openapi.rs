@@ -102,28 +102,22 @@ impl OpenAPIFilter for Value {
             &mut kept_securities,
         );
 
+        let filtered_paths = Value::Object(filtered_paths);
+        let filtered_webhooks = Value::Object(filtered_webhooks);
         let mut referenced: HashSet<String> = HashSet::new();
-        collect_path_refs(
-            &Value::Object(filtered_paths.clone()),
-            &mut referenced,
-            None,
-        );
-        collect_path_refs(
-            &Value::Object(filtered_webhooks.clone()),
-            &mut referenced,
-            None,
-        );
+        collect_path_refs(&filtered_paths, &mut referenced, None);
+        collect_path_refs(&filtered_webhooks, &mut referenced, None);
 
         let components = build_components(self, &mut referenced, &kept_securities);
         let tags = found_refs_to_tags(self, &kept_tags);
 
-        let mut result = self.clone();
+        let mut result = clone_without(self, &["paths", "webhooks", "components", "tags"]);
         if let Some(obj) = result.as_object_mut() {
             if self.get("paths").is_some() {
-                obj.insert("paths".to_string(), Value::Object(filtered_paths));
+                obj.insert("paths".to_string(), filtered_paths);
             }
             if self.get("webhooks").is_some() {
-                obj.insert("webhooks".to_string(), Value::Object(filtered_webhooks));
+                obj.insert("webhooks".to_string(), filtered_webhooks);
             }
             match components {
                 Some(components) => {
@@ -143,6 +137,28 @@ impl OpenAPIFilter for Value {
             }
         }
         result
+    }
+}
+
+/// Clones `value`, except that when it is an object, the values under `skipped` keys are replaced
+/// with `null` instead of being deep-copied. The keys themselves stay in place, so the caller can
+/// overwrite or remove them afterwards and get exactly the key order a full clone followed by the
+/// same edits would have produced, without paying for copies that are about to be discarded.
+fn clone_without(value: &Value, skipped: &[&str]) -> Value {
+    match value {
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, value)| {
+                    let value = if skipped.contains(&key.as_str()) {
+                        Value::Null
+                    } else {
+                        value.clone()
+                    };
+                    (key.clone(), value)
+                })
+                .collect(),
+        ),
+        other => other.clone(),
     }
 }
 
@@ -290,7 +306,7 @@ fn filter_operations_container(
             continue;
         }
 
-        let mut new_item = item.clone();
+        let mut new_item = clone_without(item, &HTTP_METHODS);
         if let Some(obj) = new_item.as_object_mut() {
             for method in HTTP_METHODS {
                 match matching_ops.iter().find(|(m, _)| *m == method) {
