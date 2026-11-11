@@ -6,6 +6,8 @@
 //! rules are the ones `yaml/saphyr.rs` configures (`strict_booleans`, no legacy octals,
 //! non-finite floats rejected) so parsing agrees with the default implementation value for value.
 
+use std::borrow::Cow;
+
 use granit_parser::{ScalarStyle, Tag};
 use serde_json::{Number, Value};
 
@@ -108,41 +110,46 @@ pub(super) fn is_nullish(text: &str, style: ScalarStyle, tag: Option<&Tag>) -> b
     }
 }
 
-pub(super) fn resolve(text: &str, style: ScalarStyle, tag: Option<&Tag>) -> Result<Value, String> {
+pub(super) fn resolve(
+    text: Cow<'_, str>,
+    style: ScalarStyle,
+    tag: Option<&Tag>,
+) -> Result<Value, String> {
+    let string = |text: Cow<'_, str>| Ok(Value::String(text.into_owned()));
     let kind = classify(tag);
     match kind {
         Kind::Null => return Ok(Value::Null),
         Kind::Bool => {
-            return parse_bool(text)
+            return parse_bool(&text)
                 .map(Value::Bool)
                 .ok_or_else(|| format!("invalid boolean `{text}`"));
         }
         Kind::Int => {
             return if text.trim().starts_with('-') {
-                parse_int_signed(text).map(Value::from)
+                parse_int_signed(&text).map(Value::from)
             } else {
-                parse_int_unsigned(text).map(Value::from)
+                parse_int_unsigned(&text).map(Value::from)
             }
             .ok_or_else(|| format!("invalid integer `{text}`"));
         }
         Kind::Float => {
-            return match float(text) {
+            return match float(&text) {
                 Float::Finite(f) => Ok(finite(f)),
-                Float::NonFinite => Err(non_finite(text)),
+                Float::NonFinite => Err(non_finite(&text)),
                 Float::No => Err(format!("invalid float `{text}`")),
             };
         }
-        Kind::Str => return Ok(Value::String(text.to_owned())),
+        Kind::Str => return string(text),
         Kind::Unsupported => return Err("unsupported YAML tag on a scalar".to_owned()),
         Kind::Implicit => {}
     }
     if style != ScalarStyle::Plain {
-        return Ok(Value::String(text.to_owned()));
+        return string(text);
     }
     if text.is_empty() || text == "~" || text.eq_ignore_ascii_case("null") {
         return Ok(Value::Null);
     }
-    if let Some(b) = parse_bool(text) {
+    if let Some(b) = parse_bool(&text) {
         return Ok(Value::Bool(b));
     }
     let t = text.trim();
@@ -155,10 +162,10 @@ pub(super) fn resolve(text: &str, style: ScalarStyle, tag: Option<&Tag>) -> Resu
     } else if let Some(v) = parse_int_unsigned(t) {
         return Ok(Value::from(v));
     }
-    match float(text) {
+    match float(&text) {
         Float::Finite(f) => Ok(finite(f)),
-        Float::NonFinite => Err(non_finite(text)),
-        Float::No => Ok(Value::String(text.to_owned())),
+        Float::NonFinite => Err(non_finite(&text)),
+        Float::No => string(text),
     }
 }
 
@@ -278,9 +285,9 @@ enum Float {
 
 fn float(s: &str) -> Float {
     let t = s.trim();
-    match t.to_ascii_lowercase().as_str() {
-        ".nan" | "+.nan" | "-.nan" | ".inf" | "+.inf" | "-.inf" => return Float::NonFinite,
-        _ => {}
+    let unsigned = t.strip_prefix(['+', '-']).unwrap_or(t);
+    if unsigned.eq_ignore_ascii_case(".nan") || unsigned.eq_ignore_ascii_case(".inf") {
+        return Float::NonFinite;
     }
     if let Ok(v) = t.parse::<f64>()
         && v.is_finite()
@@ -289,7 +296,6 @@ fn float(s: &str) -> Float {
     }
     // A numeral-shaped literal that overflows (`1e999`) is non-finite too; `inf`/`nan`
     // spellings stay plain strings.
-    let unsigned = t.strip_prefix(['+', '-']).unwrap_or(t);
     if !unsigned.as_bytes().first().is_some_and(u8::is_ascii_digit) {
         return Float::No;
     }
