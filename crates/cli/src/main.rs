@@ -1,7 +1,7 @@
 use clap::Parser;
 
 use openapiv3_filter_core::filter::openapi::{FilteringParameters, OpenAPIFilter};
-use serde_json::Value as JsonValue;
+use openapiv3_filter_core::parser::{self, SourceFormat};
 use std::fs;
 use std::io::{self, IsTerminal, Read};
 use std::process::ExitCode;
@@ -145,46 +145,28 @@ fn read_input(file_name: &str) -> io::Result<String> {
     }
 }
 
-/// If output format cannot be resolved by inputs filename, function can used to detect it from contents
-///
-/// # Arguments
-///
-/// * `input` - Contents of the openapi document to be filtered
-///
-/// # Returns
-///
-/// * `Option<&'static str>` - Whether the output content can be interpreted from the content
-fn detect_format(input: &str) -> Option<&'static str> {
-    if serde_json::from_str::<JsonValue>(input).is_ok() {
-        return Some("json");
-    }
-    if openapiv3_filter_core::yaml::parse_value(input).is_ok() {
-        return Some("yaml");
-    }
-    None
-}
-
 /// Decides whether the filtered result should be printed as YAML or JSON, echoing the input
-/// format back (by file extension when a real file was given, or by sniffing the content when
-/// reading from stdin). This is presentation logic, not parsing logic: `core::parser::parse`
-/// returns a plain `Value` with no notion of "the format this came from", so the CLI decides how
-/// to print it independently, using the same file name/content it used to acquire the input.
+/// format back (by file extension when a real file was given, or, when reading from stdin, by
+/// whichever syntax `core::parser::parse_with_format` read the content as). This is presentation
+/// logic, not parsing logic: the CLI decides how to print the result independently, using the
+/// same file name it used to acquire the input.
 ///
 /// # Arguments
 ///
 /// * `file_name` - The input file name, or "-" for stdin.
-/// * `input` - The raw document content (used only when reading from stdin).
+/// * `source_format` - The syntax the content was read as (used only when reading from stdin).
 ///
 /// # Returns
 ///
 /// * `OutputFormat` - Whether to print the result as YAML or JSON.
-fn output_format(file_name: &str, input: &str) -> OutputFormat {
-    let file_postfix = if file_name != "-" {
-        file_name.split(".").last()
-    } else {
-        detect_format(input)
-    };
-    match file_postfix {
+fn output_format(file_name: &str, source_format: SourceFormat) -> OutputFormat {
+    if file_name == "-" {
+        return match source_format {
+            SourceFormat::Json => OutputFormat::Json,
+            SourceFormat::Yaml => OutputFormat::Yaml,
+        };
+    }
+    match file_name.split(".").last() {
         Some("yml") => OutputFormat::Yaml,
         Some("yaml") => OutputFormat::Yaml,
         Some("json") => OutputFormat::Json,
@@ -208,15 +190,15 @@ fn main() -> ExitCode {
 
     let result: Result<(), Box<dyn std::error::Error>> = (|| -> Result<(), Box<dyn std::error::Error>> {
         let contents = read_input(&file_name)?;
-        let document = openapiv3_filter_core::parser::parse(&contents)?;
-        let filtered = document.filter_by_parameters(FilteringParameters {
+        let (document, source_format) = parser::parse_with_format(&contents)?;
+        let filtered = document.into_filtered(FilteringParameters {
             paths: path_names,
             webhooks: webhook_names,
             methods: http_methods,
             tags,
             security,
         });
-        match output_format(&file_name, &contents) {
+        match output_format(&file_name, source_format) {
             OutputFormat::Json => {
                 let text_res = serde_json::to_string(&filtered).unwrap();
                 println!("{}", text_res);

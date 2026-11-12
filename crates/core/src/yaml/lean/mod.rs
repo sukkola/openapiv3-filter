@@ -13,10 +13,12 @@
 mod emit;
 mod scalar;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use granit_parser::{Event, Options, Parser};
 
+use serde_json::map::Entry;
 use serde_json::{Map, Value};
 
 pub use super::YamlError;
@@ -108,8 +110,13 @@ impl Builder {
                 let Some(key) = key.take() else {
                     return err("mapping value without a key");
                 };
-                if entries.insert(key.clone(), value).is_some() {
-                    return err(format!("duplicate mapping key `{key}`"));
+                match entries.entry(key) {
+                    Entry::Vacant(entry) => {
+                        entry.insert(value);
+                    }
+                    Entry::Occupied(entry) => {
+                        return err(format!("duplicate mapping key `{}`", entry.key()));
+                    }
                 }
                 *n += nodes;
                 *d = (*d).max(depth);
@@ -220,9 +227,6 @@ pub fn parse(text: &str) -> Result<Value, YamlError> {
                             "a null mapping key cannot be used as a string key".into()
                         ));
                     }
-                    if let Some(Frame::Map { key, .. }) = b.stack.last_mut() {
-                        *key = Some(text.to_string());
-                    }
                     // The anchor's value is the key's resolved scalar (e.g. the number `200` for
                     // `&code 200:`), not its string spelling, so an alias to this anchor used in
                     // a *value* position comes back as that scalar. The only way `resolve` can
@@ -230,12 +234,20 @@ pub fn parse(text: &str) -> Result<Value, YamlError> {
                     // numeral-shaped but non-finite text like `.inf`: the engine accepts that as
                     // a plain key without ever attempting to resolve it to a number, so this
                     // falls back to the key's own text the same way.
-                    let resolved = scalar::resolve(&text, style, tag.as_deref())
-                        .unwrap_or_else(|_| Value::String(text.to_string()));
-                    b.anchor(anchor, &resolved, 1, 0, Some(&text), true)?;
+                    if anchor != 0 {
+                        let resolved = scalar::resolve(Cow::Borrowed(&text), style, tag.as_deref())
+                            .unwrap_or_else(|_| Value::String(text.to_string()));
+                        b.anchor(anchor, &resolved, 1, 0, Some(&text), true)?;
+                    }
+                    if let Some(Frame::Map { key, .. }) = b.stack.last_mut() {
+                        *key = Some(text.into_owned());
+                    }
                     continue;
                 }
-                let value = scalar::resolve(&text, style, tag.as_deref()).map_err(at)?;
+                // Only an anchored scalar needs its text kept beyond `resolve`, which otherwise
+                // takes it over (without a copy, when the parser already produced an owned one).
+                let key_text = (anchor != 0).then(|| text.to_string());
+                let value = scalar::resolve(text, style, tag.as_deref()).map_err(at)?;
                 // A value-position scalar can still be aliased as a *key* later (`&n 42: ok` is
                 // key position so always key_ok, but `v: &n 42` then `k: *n` is not): record
                 // whether this tag would survive the same check the key branch above runs, so an
@@ -245,7 +257,7 @@ pub fn parse(text: &str) -> Result<Value, YamlError> {
                     &value,
                     1,
                     0,
-                    Some(&text),
+                    key_text.as_deref(),
                     tag_allows_mapping_key(tag.as_deref()),
                 )?;
                 b.put(value, 1, 0)?;

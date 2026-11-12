@@ -45,6 +45,16 @@ pub trait OpenAPIFilter {
     fn filter_by_parameters(&self, filters: FilteringParameters) -> Self
     where
         Self: Sized;
+
+    /// Like [`filter_by_parameters`](Self::filter_by_parameters), but consumes the document, so
+    /// that the parts which are kept can be moved into the result instead of being copied. Prefer
+    /// this when the unfiltered document is not needed afterwards; the result is the same.
+    fn into_filtered(self, filters: FilteringParameters) -> Self
+    where
+        Self: Sized,
+    {
+        self.filter_by_parameters(filters)
+    }
 }
 
 /// Filtering implementation for OpenAPI documents represented as a generic, order-preserving
@@ -57,92 +67,137 @@ pub trait OpenAPIFilter {
 /// operation match `--path`/`--webhook`/`--method`/`--tag`/`--security`) is filter-specific logic;
 /// everything downstream of "this operation is kept" is a single generic reference-closure walk
 /// run uniformly over `paths`, `webhooks`, and every `components.*` category.
+///
+/// Both methods share every decision (see [`Selection`]); they differ only in whether the kept
+/// values are copied out of the document or moved out of it.
 impl OpenAPIFilter for Value {
     fn filter_by_parameters(&self, filters: FilteringParameters) -> Self {
-        let allowed_tags: HashSet<String> = filters.tags.into_iter().flatten().collect();
-        let allowed_methods: HashSet<String> = filters
-            .methods
-            .into_iter()
-            .flatten()
-            .map(|m| m.to_lowercase())
-            .collect();
-        let allowed_securities: HashSet<String> = filters.security.into_iter().flatten().collect();
+        let selection = Selection::new(self, filters);
 
-        let mut kept_tags: HashSet<String> = HashSet::new();
-        let mut kept_securities: HashSet<String> = HashSet::new();
-
-        let empty_map = Map::new();
-        let paths_container = self
-            .get("paths")
-            .and_then(Value::as_object)
-            .unwrap_or(&empty_map);
-        let webhooks_container = self
-            .get("webhooks")
-            .and_then(Value::as_object)
-            .unwrap_or(&empty_map);
-
-        let filtered_paths = filter_operations_container(
-            paths_container,
-            &filters.paths,
-            &allowed_methods,
-            &allowed_tags,
-            &allowed_securities,
-            self,
-            &mut kept_tags,
-            &mut kept_securities,
+        let paths = selection.materialize_container(
+            borrowed_entries(self.get("paths"), &selection.paths),
+            &selection.paths,
         );
-        let filtered_webhooks = filter_operations_container(
-            webhooks_container,
-            &filters.webhooks,
-            &allowed_methods,
-            &allowed_tags,
-            &allowed_securities,
-            self,
-            &mut kept_tags,
-            &mut kept_securities,
+        let webhooks = selection.materialize_container(
+            borrowed_entries(self.get("webhooks"), &selection.webhooks),
+            &selection.webhooks,
         );
+        let referenced = collect_refs(&paths, &webhooks);
 
-        let mut referenced: HashSet<String> = HashSet::new();
-        collect_path_refs(
-            &Value::Object(filtered_paths.clone()),
-            &mut referenced,
-            None,
-        );
-        collect_path_refs(
-            &Value::Object(filtered_webhooks.clone()),
-            &mut referenced,
-            None,
-        );
+        let components = self.get("components").map(|components| {
+            let kept = kept_component_paths(components, &referenced);
+            let security_schemes = filter_security_schemes(components, &selection.kept_securities);
+            let filtered = json_path_filter::filter_json_segments(components, &kept);
+            (filtered, security_schemes)
+        });
+        let tags = found_refs_to_tags(self, &selection.kept_tags);
 
-        let components = build_components(self, &mut referenced, &kept_securities);
-        let tags = found_refs_to_tags(self, &kept_tags);
-
-        let mut result = self.clone();
-        if let Some(obj) = result.as_object_mut() {
-            if self.get("paths").is_some() {
-                obj.insert("paths".to_string(), Value::Object(filtered_paths));
-            }
-            if self.get("webhooks").is_some() {
-                obj.insert("webhooks".to_string(), Value::Object(filtered_webhooks));
-            }
-            match components {
-                Some(components) => {
-                    obj.insert("components".to_string(), components);
-                }
-                None => {
-                    obj.remove("components");
-                }
-            }
-            match tags {
-                Some(tags) => {
-                    obj.insert("tags".to_string(), tags);
-                }
-                None => {
-                    obj.remove("tags");
-                }
-            }
-        }
+        let mut result = clone_except(self, |key| {
+            matches!(key, "paths" | "webhooks" | "components" | "tags")
+        });
+        assemble(&mut result, paths, webhooks, components, tags);
         result
+    }
+
+    fn into_filtered(mut self, filters: FilteringParameters) -> Self {
+        // Every decision is made against the intact document (a path item `$ref` may point
+        // anywhere in it) before anything is moved out.
+        let selection = Selection::new(&self, filters);
+
+        // Taking a value leaves `null` under its key, which keeps the key's position for the
+        // final edits in `assemble`, exactly as the borrowed variant's placeholders do.
+        let mut take = |key: &str| {
+            self.as_object_mut()
+                .and_then(|obj| obj.get_mut(key))
+                .map(std::mem::take)
+        };
+        let paths = selection.materialize_container(
+            owned_entries(take("paths")),
+            &selection.paths,
+        );
+        let webhooks = selection.materialize_container(
+            owned_entries(take("webhooks")),
+            &selection.webhooks,
+        );
+        let referenced = collect_refs(&paths, &webhooks);
+
+        let components = take("components").map(|components| {
+            let kept = kept_component_paths(&components, &referenced);
+            let security_schemes = filter_security_schemes(&components, &selection.kept_securities);
+            let filtered = json_path_filter::filter_json_segments_owned(components, &kept);
+            (filtered, security_schemes)
+        });
+        let tags = found_refs_to_tags(&self, &selection.kept_tags);
+
+        assemble(&mut self, paths, webhooks, components, tags);
+        self
+    }
+}
+
+/// Writes the filtered parts into `result`, a copy of the document whose `paths`, `webhooks`,
+/// `components` and `tags` keys (where present) hold placeholders.
+fn assemble(
+    result: &mut Value,
+    paths: Map<String, Value>,
+    webhooks: Map<String, Value>,
+    components: Option<(Option<Value>, Option<Value>)>,
+    tags: Option<Value>,
+) {
+    let components = components.and_then(|(filtered, security_schemes)| {
+        build_components(filtered, security_schemes)
+    });
+    let Some(obj) = result.as_object_mut() else {
+        return;
+    };
+    if obj.contains_key("paths") {
+        obj.insert("paths".to_string(), Value::Object(paths));
+    }
+    if obj.contains_key("webhooks") {
+        obj.insert("webhooks".to_string(), Value::Object(webhooks));
+    }
+    match components {
+        Some(components) => {
+            obj.insert("components".to_string(), components);
+        }
+        None => {
+            obj.remove("components");
+        }
+    }
+    match tags {
+        Some(tags) => {
+            obj.insert("tags".to_string(), tags);
+        }
+        None => {
+            obj.remove("tags");
+        }
+    }
+}
+
+/// Every `$ref` string in the filtered `paths` and `webhooks`.
+fn collect_refs(paths: &Map<String, Value>, webhooks: &Map<String, Value>) -> HashSet<String> {
+    let mut referenced: HashSet<String> = HashSet::new();
+    for (key, value) in paths.iter().chain(webhooks) {
+        collect_path_refs(value, &mut referenced, Some(key));
+    }
+    referenced
+}
+
+/// Clones `value`, except that when it is an object, the values under keys `skip` accepts are
+/// replaced with `null` instead of being deep-copied. The keys themselves stay in place, so the
+/// caller can overwrite or remove them afterwards and get exactly the key order a full clone
+/// followed by the same edits would have produced, without paying for copies that are about to be
+/// discarded.
+fn clone_except(value: &Value, skip: impl Fn(&str) -> bool) -> Value {
+    match value {
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, value)| {
+                    let value = if skip(key) { Value::Null } else { value.clone() };
+                    (key.clone(), value)
+                })
+                .collect(),
+        ),
+        other => other.clone(),
     }
 }
 
@@ -210,193 +265,257 @@ fn operation_matches(
     true
 }
 
-/// Filters the entries of a `paths` or `webhooks` container (identical shape: a map from name to
-/// a Path/Webhook Item object, each potentially a `$ref`, each potentially holding HTTP-method
-/// operation entries).
-///
-/// Vendor extension siblings (`x-*` keys) at the container level are preserved verbatim, matching
-/// the fact that the OpenAPI Paths/Webhooks Object permits extensions alongside entries.
-#[allow(clippy::too_many_arguments)]
-fn filter_operations_container(
-    container: &Map<String, Value>,
-    name_patterns: &Option<Vec<String>>,
-    allowed_methods: &HashSet<String>,
-    allowed_tags: &HashSet<String>,
-    allowed_securities: &HashSet<String>,
-    doc: &Value,
-    kept_tags: &mut HashSet<String>,
-    kept_securities: &mut HashSet<String>,
-) -> Map<String, Value> {
-    let name_matchers: Option<Vec<WildMatch>> = name_patterns
-        .as_ref()
-        .map(|patterns| patterns.iter().map(|p| WildMatch::new(p)).collect());
+/// What filtering does with one entry of a `paths` or `webhooks` container.
+#[derive(Debug, PartialEq)]
+enum EntryDecision {
+    Drop,
+    /// Kept unchanged: a vendor extension, or a `$ref` to a reusable path item (which is
+    /// filtered as a component instead).
+    Whole,
+    /// Kept with only these operations, each pruned by [`prune_operation`].
+    Methods(Vec<&'static str>),
+}
 
-    let mut result = Map::new();
+/// Every filtering decision, made by reading the unfiltered document: which entries of `paths`
+/// and `webhooks` (and which of their operations) are kept, and which tags and security scheme
+/// names the kept operations use.
+struct Selection {
+    allowed_tags: HashSet<String>,
+    allowed_securities: HashSet<String>,
+    kept_tags: HashSet<String>,
+    kept_securities: HashSet<String>,
+    /// One decision per entry of `paths`, in document order.
+    paths: Vec<EntryDecision>,
+    /// One decision per entry of `webhooks`, in document order.
+    webhooks: Vec<EntryDecision>,
+}
 
-    for (name, item) in container {
-        if name.starts_with("x-") {
-            result.insert(name.clone(), item.clone());
-            continue;
-        }
-
-        if let Some(matchers) = &name_matchers
-            && !matchers.iter().any(|matcher| matcher.matches(name))
-        {
-            continue;
-        }
-
-        let resolved = resolve_operations_source(item, doc);
-        let operations: Vec<(&str, &Value)> = resolved
-            .as_object()
-            .map(|obj| {
-                HTTP_METHODS
-                    .iter()
-                    .filter_map(|method| obj.get(*method).map(|op| (*method, op)))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let matching_ops: Vec<(&str, &Value)> = operations
+impl Selection {
+    fn new(doc: &Value, filters: FilteringParameters) -> Self {
+        let allowed_methods: HashSet<String> = filters
+            .methods
             .into_iter()
-            .filter(|(method, operation)| {
-                operation_matches(
-                    method,
-                    operation,
-                    allowed_methods,
-                    allowed_tags,
-                    allowed_securities,
-                )
-            })
+            .flatten()
+            .map(|m| m.to_lowercase())
             .collect();
+        let mut selection = Selection {
+            allowed_tags: filters.tags.into_iter().flatten().collect(),
+            allowed_securities: filters.security.into_iter().flatten().collect(),
+            kept_tags: HashSet::new(),
+            kept_securities: HashSet::new(),
+            paths: Vec::new(),
+            webhooks: Vec::new(),
+        };
+        selection.paths =
+            selection.select_container(doc, "paths", &filters.paths, &allowed_methods);
+        selection.webhooks =
+            selection.select_container(doc, "webhooks", &filters.webhooks, &allowed_methods);
+        selection
+    }
 
-        if matching_ops.is_empty() {
-            continue;
-        }
+    /// Decides the fate of every entry of a `paths` or `webhooks` container (identical shape: a
+    /// map from name to a Path/Webhook Item object, each potentially a `$ref`, each potentially
+    /// holding HTTP-method operation entries).
+    ///
+    /// Vendor extension siblings (`x-*` keys) at the container level are preserved verbatim,
+    /// matching the fact that the OpenAPI Paths/Webhooks Object permits extensions alongside
+    /// entries.
+    fn select_container(
+        &mut self,
+        doc: &Value,
+        container: &str,
+        name_patterns: &Option<Vec<String>>,
+        allowed_methods: &HashSet<String>,
+    ) -> Vec<EntryDecision> {
+        let Some(container) = doc.get(container).and_then(Value::as_object) else {
+            return Vec::new();
+        };
+        let name_matchers: Option<Vec<WildMatch>> = name_patterns
+            .as_ref()
+            .map(|patterns| patterns.iter().map(|p| WildMatch::new(p)).collect());
 
-        collect_operation_tags(
-            matching_ops.iter().map(|(_, op)| *op).collect(),
-            kept_tags,
-            allowed_tags,
-        );
-        collect_operation_securities(
-            matching_ops.iter().map(|(_, op)| *op).collect(),
-            kept_securities,
-            allowed_securities,
-        );
+        container
+            .iter()
+            .map(|(name, item)| {
+                if name.starts_with("x-") {
+                    return EntryDecision::Whole;
+                }
+                if let Some(matchers) = &name_matchers
+                    && !matchers.iter().any(|matcher| matcher.matches(name))
+                {
+                    return EntryDecision::Drop;
+                }
 
-        if item.get("$ref").is_some() {
-            // Wholesale keep: the reusable path item itself is filtered as a component, not here.
-            result.insert(name.clone(), item.clone());
-            continue;
-        }
+                let resolved = resolve_operations_source(item, doc);
+                let matching_ops: Vec<(&'static str, &Value)> = resolved
+                    .as_object()
+                    .map(|obj| {
+                        HTTP_METHODS
+                            .iter()
+                            .filter_map(|method| obj.get(*method).map(|op| (*method, op)))
+                            .filter(|(method, operation)| {
+                                operation_matches(
+                                    method,
+                                    operation,
+                                    allowed_methods,
+                                    &self.allowed_tags,
+                                    &self.allowed_securities,
+                                )
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
 
-        let mut new_item = item.clone();
-        if let Some(obj) = new_item.as_object_mut() {
-            for method in HTTP_METHODS {
-                match matching_ops.iter().find(|(m, _)| *m == method) {
-                    Some((_, operation)) => {
-                        obj.insert(
-                            method.to_string(),
-                            clone_operation(operation, allowed_tags, allowed_securities),
-                        );
-                    }
-                    None => {
-                        obj.remove(method);
+                if matching_ops.is_empty() {
+                    return EntryDecision::Drop;
+                }
+
+                collect_operation_tags(
+                    matching_ops.iter().map(|(_, op)| *op).collect(),
+                    &mut self.kept_tags,
+                    &self.allowed_tags,
+                );
+                collect_operation_securities(
+                    matching_ops.iter().map(|(_, op)| *op).collect(),
+                    &mut self.kept_securities,
+                    &self.allowed_securities,
+                );
+
+                if item.get("$ref").is_some() {
+                    // Wholesale keep: the reusable path item itself is filtered as a component,
+                    // not here.
+                    EntryDecision::Whole
+                } else {
+                    EntryDecision::Methods(matching_ops.into_iter().map(|(m, _)| m).collect())
+                }
+            })
+            .collect()
+    }
+
+    /// Builds a filtered container from its entries, which must line up one to one with the
+    /// `decisions` made for them. A dropped entry may be given as a placeholder (it is never
+    /// looked at); an entry kept with [`EntryDecision::Methods`] may have a placeholder for every
+    /// operation that is not kept.
+    fn materialize_container(
+        &self,
+        entries: impl Iterator<Item = (String, Value)>,
+        decisions: &[EntryDecision],
+    ) -> Map<String, Value> {
+        let mut result = Map::new();
+        for ((name, mut item), decision) in entries.zip(decisions) {
+            match decision {
+                EntryDecision::Drop => continue,
+                EntryDecision::Whole => {}
+                EntryDecision::Methods(methods) => {
+                    if let Some(obj) = item.as_object_mut() {
+                        for method in HTTP_METHODS {
+                            if !methods.contains(&method) {
+                                obj.remove(method);
+                            } else if let Some(operation) = obj.get_mut(method) {
+                                *operation = prune_operation(
+                                    std::mem::take(operation),
+                                    &self.allowed_tags,
+                                    &self.allowed_securities,
+                                );
+                            }
+                        }
                     }
                 }
             }
+            result.insert(name, item);
         }
-        result.insert(name.clone(), new_item);
+        result
     }
-
-    result
 }
 
-/// Clones an operation value, pruning its `tags` and `security` arrays down to the allowed sets
-/// when either filter is active. All other fields (`requestBody`, `responses`, `parameters`,
-/// `callbacks`, `links`, ...) are carried through unchanged, so any structural element under an
-/// operation participates in the generic reference-closure walk without needing field-specific
-/// handling here.
-fn clone_operation(
-    operation: &Value,
+/// The entries of a container in `doc`, copied as far as `decisions` keeps them: dropped entries
+/// and operations that are not kept become placeholders instead of copies.
+fn borrowed_entries<'a>(
+    container: Option<&'a Value>,
+    decisions: &'a [EntryDecision],
+) -> impl Iterator<Item = (String, Value)> + 'a {
+    container
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .zip(decisions)
+        .map(|((name, item), decision)| match decision {
+            EntryDecision::Drop => (String::new(), Value::Null),
+            EntryDecision::Whole => (name.clone(), item.clone()),
+            EntryDecision::Methods(methods) => {
+                let item = clone_except(item, |key| {
+                    HTTP_METHODS.contains(&key) && !methods.contains(&key)
+                });
+                (name.clone(), item)
+            }
+        })
+}
+
+/// The entries of a container taken out of the document.
+fn owned_entries(container: Option<Value>) -> impl Iterator<Item = (String, Value)> {
+    match container {
+        Some(Value::Object(map)) => map,
+        _ => Map::new(),
+    }
+    .into_iter()
+}
+
+/// Prunes an operation's `tags` and `security` arrays down to the allowed sets when either filter
+/// is active. All other fields (`requestBody`, `responses`, `parameters`, `callbacks`, `links`,
+/// ...) are carried through unchanged, so any structural element under an operation
+/// participates in the generic reference-closure walk without needing field-specific handling
+/// here.
+fn prune_operation(
+    mut operation: Value,
     allowed_tags: &HashSet<String>,
     allowed_securities: &HashSet<String>,
 ) -> Value {
     let filter_tags = !allowed_tags.is_empty();
     let filter_securities = !allowed_securities.is_empty();
-    if !filter_tags && !filter_securities {
-        return operation.clone();
-    }
-
-    let mut new_operation = operation.clone();
-    if let Some(obj) = new_operation.as_object_mut() {
-        if filter_tags {
-            let new_tags: Vec<Value> = obj
-                .get("tags")
-                .and_then(Value::as_array)
-                .map(|tags| {
-                    tags.iter()
-                        .filter(|tag| {
-                            tag.as_str()
-                                .map(|tag| allowed_tags.contains(tag))
-                                .unwrap_or(false)
-                        })
-                        .cloned()
-                        .collect()
-                })
-                .unwrap_or_default();
-            if new_tags.is_empty() {
-                obj.remove("tags");
-            } else {
-                obj.insert("tags".to_string(), Value::Array(new_tags));
+    let Some(obj) = operation.as_object_mut() else {
+        return operation;
+    };
+    if filter_tags {
+        let keep = match obj.get_mut("tags") {
+            Some(Value::Array(tags)) => {
+                tags.retain(|tag| tag.as_str().is_some_and(|tag| allowed_tags.contains(tag)));
+                !tags.is_empty()
             }
-        }
-        if filter_securities {
-            let new_security: Vec<Value> = obj
-                .get("security")
-                .and_then(Value::as_array)
-                .map(|requirements| {
-                    requirements
-                        .iter()
-                        .filter_map(|requirement| {
-                            let requirement_map = requirement.as_object()?;
-                            let filtered: Map<String, Value> = requirement_map
-                                .iter()
-                                .filter(|(scheme, _)| allowed_securities.contains(*scheme))
-                                .map(|(k, v)| (k.clone(), v.clone()))
-                                .collect();
-                            if filtered.is_empty() {
-                                None
-                            } else {
-                                Some(Value::Object(filtered))
-                            }
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            if new_security.is_empty() {
-                obj.remove("security");
-            } else {
-                obj.insert("security".to_string(), Value::Array(new_security));
-            }
+            _ => false,
+        };
+        if !keep {
+            obj.remove("tags");
         }
     }
-    new_operation
+    if filter_securities {
+        let keep = match obj.get_mut("security") {
+            Some(Value::Array(requirements)) => {
+                requirements.retain_mut(|requirement| match requirement {
+                    Value::Object(schemes) => {
+                        schemes.retain(|scheme, _| allowed_securities.contains(scheme));
+                        !schemes.is_empty()
+                    }
+                    _ => false,
+                });
+                !requirements.is_empty()
+            }
+            _ => false,
+        };
+        if !keep {
+            obj.remove("security");
+        }
+    }
+    operation
 }
 
 /// Builds the filtered `components` value: the generic reference-closure result (every category,
-/// including 3.1's `pathItems`), with `securitySchemes` additionally re-filtered against
-/// `kept_securities` — security requirements reference scheme names directly rather than via
-/// `$ref`, so they aren't reachable by the generic walk and need this explicit pass, mirroring the
-/// pre-existing special-case for security schemes.
-fn build_components(
-    doc: &Value,
-    referenced: &mut HashSet<String>,
-    kept_securities: &HashSet<String>,
-) -> Option<Value> {
-    let mut components = found_refs_to_components(doc, referenced).unwrap_or(Value::Object(Map::new()));
+/// including 3.1's `pathItems`), with `securitySchemes` replaced by `security_schemes` — security
+/// requirements reference scheme names directly rather than via `$ref`, so they aren't reachable
+/// by the generic walk and need this explicit pass, mirroring the pre-existing special-case for
+/// security schemes.
+fn build_components(filtered: Option<Value>, security_schemes: Option<Value>) -> Option<Value> {
+    let mut components = filtered.unwrap_or(Value::Object(Map::new()));
 
-    let security_schemes = filter_security_schemes(doc, kept_securities);
     if let Some(obj) = components.as_object_mut() {
         match security_schemes {
             Some(schemes) => {
@@ -416,8 +535,8 @@ fn build_components(
 }
 
 /// Filters `components.securitySchemes` down to the names referenced by kept operations.
-fn filter_security_schemes(doc: &Value, kept_securities: &HashSet<String>) -> Option<Value> {
-    let schemes = doc.pointer("/components/securitySchemes")?.as_object()?;
+fn filter_security_schemes(components: &Value, kept_securities: &HashSet<String>) -> Option<Value> {
+    let schemes = components.get("securitySchemes")?.as_object()?;
     let filtered: Map<String, Value> = schemes
         .iter()
         .filter(|(name, _)| kept_securities.contains(*name))
@@ -430,7 +549,8 @@ fn filter_security_schemes(doc: &Value, kept_securities: &HashSet<String>) -> Op
     }
 }
 
-/// Computes the generic reference-closure result over every `components.*` category.
+/// Computes the generic reference-closure over every `components.*` category: the paths, as
+/// segment lists relative to `components`, of every component to keep.
 ///
 /// This walks the whole `components` value tree once (category-agnostically, via
 /// `reference_collector::collect_component_refs`), builds the transitive `$ref` reachability graph
@@ -438,9 +558,7 @@ fn filter_security_schemes(doc: &Value, kept_securities: &HashSet<String>) -> Op
 /// entry itself references) reachable from it. A component category introduced by a future
 /// OpenAPI revision is handled the same way, as long as it's reachable via `$ref` — no
 /// category-specific code is needed here.
-fn found_refs_to_components(doc: &Value, referenced: &mut HashSet<String>) -> Option<Value> {
-    let components = doc.get("components")?;
-
+fn kept_component_paths(components: &Value, referenced: &HashSet<String>) -> Vec<Vec<String>> {
     let mut component_references: HashMap<String, Vec<String>> = HashMap::new();
     reference_collector::collect_component_refs(
         components,
@@ -464,14 +582,12 @@ fn found_refs_to_components(doc: &Value, referenced: &mut HashSet<String>) -> Op
 
     // Keep paths as segment lists rather than dot-joined strings: component names such as
     // `issuing.authorization` contain dots and must stay one key.
-    let component_paths: Vec<Vec<String>> = final_references
+    final_references
         .iter()
         .filter(|component| component.starts_with("#/components/"))
         .filter_map(|component| pointer::ref_segments(component))
         .map(|segments| segments[1..].to_vec())
-        .collect();
-
-    json_path_filter::filter_json_segments(components, &component_paths)
+        .collect()
 }
 
 /// Filters the top-level `tags` array down to the tag names actually used by kept operations.
@@ -999,7 +1115,7 @@ mod tests {
     }
 
     #[test]
-    fn clone_operation_drops_tags_and_security_fields_when_nothing_survives_the_filter() {
+    fn prune_operation_drops_tags_and_security_fields_when_nothing_survives_the_filter() {
         let operation = json!({
             "tags": ["other"],
             "security": [{ "basic_auth": [] }],
@@ -1007,9 +1123,157 @@ mod tests {
         let allowed_tags: HashSet<String> = [String::from("item")].into_iter().collect();
         let allowed_securities: HashSet<String> = [String::from("api_key")].into_iter().collect();
 
-        let cloned = clone_operation(&operation, &allowed_tags, &allowed_securities);
+        let cloned = prune_operation(operation, &allowed_tags, &allowed_securities);
 
         assert!(cloned.get("tags").is_none());
         assert!(cloned.get("security").is_none());
+    }
+
+    /// A document exercising the corners where moving and copying could disagree: key order
+    /// after removals, empty and scalar components, refs into the middle of a component, to a
+    /// whole category and to `#/components`, percent-encoded and `~`-escaped names, `$ref` path
+    /// items (resolved, dangling and pointing into `paths`), non-object items and operations.
+    fn tricky_document() -> Value {
+        json!({
+            "x-top": 1,
+            "tags": [{ "name": "a" }, { "name": "b" }, { "name": "c" }],
+            "components": {
+                "x-ext": { "keep": true },
+                "schemas": {
+                    "Empty": {},
+                    "EmptyArr": [],
+                    "Prim": 5,
+                    "Deep": { "properties": { "p": { "nested": { "$ref": "#/components/schemas/Deep2" } }, "q": {} } },
+                    "Deep2": { "oneOf": [{ "$ref": "#/components/schemas/Empty" }, {}, [], { "a": [[]] }] },
+                    "a.b": { "$ref": "#/components/schemas/a~1b" },
+                    "a/b": { "$ref": "#/components/schemas/pct%20name" },
+                    "pct name": { "enum": [0, 1.5] },
+                    "Unused": { "type": "string" }
+                },
+                "responses": {
+                    "R1": { "content": { "a/b": { "schema": { "$ref": "#/components/schemas/Deep/properties/p" } } } },
+                    "R2": { "x": { "$ref": "#/components/parameters" } }
+                },
+                "parameters": { "P1": { "name": "p1" }, "P2": { "schema": { "$ref": "#/components/schemas/a.b" } } },
+                "pathItems": {
+                    "Reusable": {
+                        "get": { "tags": ["b"], "responses": { "200": { "$ref": "#/components/responses/R1" } } },
+                        "post": { "tags": ["c"], "security": [{ "k1": [], "k2": [] }] }
+                    }
+                },
+                "securitySchemes": { "k1": {}, "k2": {}, "k3": {} }
+            },
+            "paths": {
+                "x-first": { "v": 1 },
+                "/p1": {
+                    "summary": "s",
+                    "trace": { "tags": ["a"] },
+                    "x-mid": true,
+                    "get": {
+                        "tags": ["a", "b", 7],
+                        "security": [{ "k1": [] }, { "k2": [], "k3": [] }, {}, "odd"],
+                        "responses": { "200": { "$ref": "#/components/responses/R2" } }
+                    },
+                    "parameters": [{ "$ref": "#/components/parameters/P1" }],
+                    "post": { "tags": "b", "requestBody": { "$ref": "#/components/schemas/a.b" } },
+                    "delete": { "tags": ["c"], "security": [{ "k3": [] }] },
+                    "patch": "not an object",
+                    "x-last": [1, 2]
+                },
+                "/p2": { "$ref": "#/components/pathItems/Reusable" },
+                "/p3": { "$ref": "#/components/pathItems/Missing" },
+                "/p4": "scalar item",
+                "/p5": { "put": { "responses": { "default": { "$ref": "#/components" } } } },
+                "/p6": { "$ref": "#/paths/~1p1" }
+            },
+            "webhooks": {
+                "hookA": { "post": { "tags": ["a"], "x": { "$ref": "#/components/schemas/Prim" } } },
+                "hookB": { "$ref": "#/components/pathItems/Reusable" },
+                "x-hook": 1
+            },
+            "openapi": "3.1.0",
+            "x-tail": null
+        })
+    }
+
+    fn filter_combinations() -> Vec<FilteringParameters> {
+        let strings = |items: &[&str]| Some(items.iter().map(|s| s.to_string()).collect());
+        vec![
+            FilteringParameters::default(),
+            FilteringParameters { paths: strings(&["nomatch"]), ..Default::default() },
+            FilteringParameters { paths: strings(&["/p1", "/p6", "*{*}*", "/pet*"]), ..Default::default() },
+            FilteringParameters { webhooks: strings(&["hookB", "user*"]), ..Default::default() },
+            FilteringParameters { methods: strings(&["GET", "post"]), ..Default::default() },
+            FilteringParameters { tags: strings(&["a", "b", "items", "pet", "item"]), ..Default::default() },
+            FilteringParameters { security: strings(&["k1", "k2", "ApiKeyAuth", "api_key"]), ..Default::default() },
+            FilteringParameters {
+                paths: strings(&["/p*", "/pet*", "/items*"]),
+                methods: strings(&["get", "post", "trace"]),
+                tags: strings(&["a", "c", "pet", "items"]),
+                security: strings(&["k1", "k3", "petstore_auth", "ApiKeyAuth"]),
+                webhooks: strings(&["hook*"]),
+            },
+        ]
+    }
+
+    #[test]
+    fn into_filtered_produces_exactly_what_filter_by_parameters_does() {
+        let mut documents = vec![tricky_document(), json!("not an object"), json!({})];
+        for fixture in [
+            "deep-ref-chain.json",
+            "full-coverage-3.0.yaml",
+            "full-coverage-3.1.yaml",
+            "petstore.yaml",
+            "special-component-names.json",
+            "user-reference.yaml",
+        ] {
+            documents.push(load(&format!("tests/resources/{fixture}")));
+        }
+
+        for document in &documents {
+            for (borrowed_filters, owned_filters) in
+                filter_combinations().into_iter().zip(filter_combinations())
+            {
+                let description = format!("{borrowed_filters:?}");
+                let borrowed = document.filter_by_parameters(borrowed_filters);
+                let owned = document.clone().into_filtered(owned_filters);
+                // Compare the serialized text: `Value` equality ignores map key order.
+                assert_eq!(
+                    serde_json::to_string(&owned).unwrap(),
+                    serde_json::to_string(&borrowed).unwrap(),
+                    "{description}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn it_keeps_the_key_order_the_clone_then_edit_filter_produced() {
+        // Pinned output of the original implementation, which cloned the document and then
+        // inserted/removed keys: `Map::remove` swaps the last key into the removed one's place.
+        let filtered = tricky_document().filter_by_parameters(FilteringParameters {
+            methods: Some(vec![String::from("get")]),
+            tags: Some(vec![String::from("a")]),
+            security: Some(vec![String::from("k1")]),
+            ..Default::default()
+        });
+
+        let keys = |value: &Value| value.as_object().unwrap().keys().cloned().collect::<Vec<_>>();
+        assert_eq!(
+            keys(&filtered),
+            ["x-top", "tags", "components", "paths", "webhooks", "openapi", "x-tail"]
+        );
+        assert_eq!(
+            keys(&filtered["paths"]["/p1"]),
+            ["summary", "x-last", "x-mid", "get", "parameters"]
+        );
+        assert_eq!(
+            filtered["paths"]["/p1"]["get"],
+            json!({
+                "tags": ["a"],
+                "security": [{ "k1": [] }],
+                "responses": { "200": { "$ref": "#/components/responses/R2" } }
+            })
+        );
     }
 }

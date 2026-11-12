@@ -83,6 +83,11 @@ pub fn segments_to_ref(segments: &[String]) -> String {
 /// Normalises a `$ref` string so that equivalent spellings of the same local pointer (percent
 /// encoded or not) compare equal. Non-local references are returned unchanged.
 pub fn canonical_ref(reference: &str) -> String {
+    // Without `%` or `~` nothing is decoded or unescaped, and a segment split on `/` has nothing
+    // to re-escape either: the canonical form is the input itself.
+    if !reference.contains(['%', '~']) {
+        return reference.to_string();
+    }
     match ref_segments(reference) {
         Some(segments) => segments_to_ref(&segments),
         None => reference.to_string(),

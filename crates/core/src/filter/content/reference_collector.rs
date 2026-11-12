@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use crate::filter::content::pointer::{canonical_ref, escape_segment};
@@ -17,14 +18,8 @@ use crate::filter::content::pointer::{canonical_ref, escape_segment};
 pub fn collect_path_refs(value: &Value, refs: &mut HashSet<String>, key_name: Option<&String>) {
     match value {
         Value::Object(map) => {
-            // Check if this object has a $ref key
-            if let Some(ref_value) = map.get("$ref")
-                && let Some(ref_str) = ref_value.as_str()
-            {
-                refs.insert(ref_str.to_string());
-            }
-
-            // Recurse into all object values
+            // Recurse into all object values; a string under a `$ref` key is collected when the
+            // recursion reaches it, below.
             for (k, v) in map {
                 collect_path_refs(v, refs, Some(k));
             }
@@ -38,6 +33,7 @@ pub fn collect_path_refs(value: &Value, refs: &mut HashSet<String>, key_name: Op
         value => {
             if key_name.is_some_and(|key| key == "$ref")
                 && let Some(ref_str) = value.as_str()
+                && !refs.contains(ref_str)
             {
                 refs.insert(ref_str.to_string());
             }
@@ -166,20 +162,25 @@ pub fn collect_component_refs(
     match value {
         Value::Object(map) => {
             for (key, val) in map {
-                let new_path = if current_path.is_empty() {
-                    escape_segment(key).into_owned()
+                // Past the category/name depth the path stops growing, so it is borrowed rather
+                // than copied for every node of the (potentially large) component body.
+                let new_path: Cow<'_, str> = if current_path.is_empty() {
+                    escape_segment(key)
                 } else if recursion_level < allowed_key_recursion_levels {
-                    format!("{}/{}", current_path, escape_segment(key))
+                    Cow::Owned(format!("{}/{}", current_path, escape_segment(key)))
                 } else {
-                    current_path.to_string()
+                    Cow::Borrowed(current_path)
                 };
 
                 if key == "$ref" {
                     if let Some(ref_value) = val.as_str() {
-                        let key = new_path.to_string();
-                        refs.entry(key.clone())
-                            .or_default()
-                            .push(canonical_ref(ref_value));
+                        let reference = canonical_ref(ref_value);
+                        match refs.get_mut(new_path.as_ref()) {
+                            Some(edges) => edges.push(reference),
+                            None => {
+                                refs.insert(new_path.into_owned(), vec![reference]);
+                            }
+                        }
                     }
                 } else {
                     collect_component_refs(
@@ -197,10 +198,10 @@ pub fn collect_component_refs(
                 // Mirror the Object branch: once past the category/name depth, freeze the path
                 // instead of fragmenting it with an index, so a $ref inside a `oneOf`/`anyOf`/
                 // `allOf` array is still attributed to the enclosing component's own key.
-                let new_path = if recursion_level < allowed_key_recursion_levels {
-                    format!("{}/{}", current_path, index)
+                let new_path: Cow<'_, str> = if recursion_level < allowed_key_recursion_levels {
+                    Cow::Owned(format!("{}/{}", current_path, index))
                 } else {
-                    current_path.to_string()
+                    Cow::Borrowed(current_path)
                 };
                 collect_component_refs(
                     item,

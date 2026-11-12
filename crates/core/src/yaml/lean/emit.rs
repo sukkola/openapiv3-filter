@@ -195,15 +195,21 @@ fn write_string(out: &mut String, s: &str, owner: usize) {
         Folded,
     }
     let mut style = None;
+    // Whether `s` itself is plain-value safe, when that is already known from the style checks.
+    let mut plain = None;
     if s.contains('\n') {
         if is_block_scalar_content_safe(s) && !s.is_empty() {
             style = Some(Style::Literal);
         }
     } else {
         let probe = s.trim_end_matches(' ');
-        if !probe.is_empty() && is_plain_value_safe(probe, false) && s.chars().count() > FOLD_COLS {
+        let probe_plain = !probe.is_empty() && is_plain_value_safe(probe, false);
+        if probe_plain && s.chars().count() > FOLD_COLS {
             style = Some(Style::Folded);
         }
+        // With no trailing spaces `probe` is `s`; with them, `s` ends in whitespace and so is
+        // never plain-value safe.
+        plain = Some(probe.len() == s.len() && probe_plain);
     }
 
     let Some(style) = style else {
@@ -211,17 +217,17 @@ fn write_string(out: &mut String, s: &str, owner: usize) {
             out.push('\'');
             out.push_str(s);
             out.push('\'');
-        } else if is_plain_value_safe(s, false) {
+        } else if plain.unwrap_or_else(|| is_plain_value_safe(s, false)) {
             out.push_str(s);
         } else {
             write_quoted(out, s);
         }
         return;
     };
-    if !is_block_scalar_content_safe(s) {
-        write_quoted(out, s);
-        return;
-    }
+    // Literal style was chosen only for block-safe content; folded style only for text that is
+    // plain-value safe, which rules out every character a block cannot hold (all of them are
+    // control characters) and leaves only the trailing spaces, which a block can hold.
+    debug_assert!(is_block_scalar_content_safe(s));
 
     let body = owner + INDENT;
     // The first non-empty line with leading spaces needs an explicit indentation indicator.
@@ -662,15 +668,83 @@ fn escape_double_quoted(s: &str, out: &mut String) {
     }
 }
 
+/// Whether `string` contains one of the `values` (all ASCII) or a character
+/// [`is_controll_which_needs_escaping`] accepts. Scans UTF-8 bytes rather than decoding chars:
+/// every such character outside ASCII has a distinctive encoding (`U+0080..=U+009F` is
+/// `C2 80..=9F`, `U+2028`/`U+2029` are `E2 80 A8`/`A9`, `U+FEFF` is `EF BB BF`,
+/// `U+FFFE`/`U+FFFF` are `EF BF BE`/`BF`), and a lead byte is never mistaken for a continuation
+/// byte.
 fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {
-    string
-        .chars()
-        .any(|x| is_controll_which_needs_escaping(x) || values.contains(&x))
+    // Bit `b` is set for every ASCII byte `b` that is a match: the C0 controls, DEL, `values`.
+    debug_assert!(values.iter().all(char::is_ascii));
+    let ascii = values
+        .iter()
+        .fold(0xFFFF_FFFF | (1u128 << 0x7F), |mask, &value| {
+            mask | (1u128 << u32::from(value))
+        });
+    let bytes = string.as_bytes();
+    bytes.iter().enumerate().any(|(i, &b)| match b {
+        0x00..=0x7F => ascii & (1u128 << b) != 0,
+        0xC2 => matches!(bytes.get(i + 1), Some(0x80..=0x9F)),
+        0xE2 => bytes.get(i + 1) == Some(&0x80) && matches!(bytes.get(i + 2), Some(0xA8 | 0xA9)),
+        0xEF => matches!(
+            (bytes.get(i + 1), bytes.get(i + 2)),
+            (Some(0xBB), Some(0xBF)) | (Some(0xBF), Some(0xBE | 0xBF))
+        ),
+        _ => false,
+    })
 }
 
+/// Whether a `#` directly follows a whitespace character anywhere in `string`.
 fn has_comment_start(string: &str) -> bool {
-    string
-        .chars()
-        .zip(string.chars().skip(1))
-        .any(|(prev, curr)| prev.is_whitespace() && curr == '#')
+    string.match_indices('#').any(|(i, _)| {
+        string[..i]
+            .chars()
+            .next_back()
+            .is_some_and(char::is_whitespace)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    /// The straightforward char-by-char forms of the scanners that were rewritten for speed;
+    /// the rewrites must agree with them on every input.
+    mod reference {
+        use super::super::is_controll_which_needs_escaping;
+
+        pub fn contains_any_or_is_control(string: &str, values: &[char]) -> bool {
+            string
+                .chars()
+                .any(|x| is_controll_which_needs_escaping(x) || values.contains(&x))
+        }
+
+        pub fn has_comment_start(string: &str) -> bool {
+            string
+                .chars()
+                .zip(string.chars().skip(1))
+                .any(|(prev, curr)| prev.is_whitespace() && curr == '#')
+        }
+    }
+
+    #[test]
+    fn byte_scanners_agree_with_char_scanners_for_every_character() {
+        let value_sets: [&[char]; 3] = [&[], &[':'], &[',', '[', ']', '{', '}']];
+        for c in (0..=0x10FFFF).filter_map(char::from_u32) {
+            // `c` alone, and `c` both inside a string and right before a `#`.
+            for text in [c.to_string(), format!("x{c}#")] {
+                for values in value_sets {
+                    assert_eq!(
+                        super::contains_any_or_is_control(&text, values),
+                        reference::contains_any_or_is_control(&text, values),
+                        "contains_any_or_is_control({text:?}, {values:?})"
+                    );
+                }
+                assert_eq!(
+                    super::has_comment_start(&text),
+                    reference::has_comment_start(&text),
+                    "has_comment_start({text:?})"
+                );
+            }
+        }
+    }
 }
