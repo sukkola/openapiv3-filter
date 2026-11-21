@@ -6,9 +6,9 @@
 //! text -> `serde_json::Value`" and "`serde_json::Value` -> YAML text", so this module provides
 //! exactly that directly on top of `granit-parser` (the event parser `serde-saphyr` itself uses),
 //! with scalar resolution and output styling adapted from `serde-saphyr` so results agree with
-//! the default implementation. `tests/yaml_differential.rs` checks that agreement.
+//! `yaml-saphyr`. `tests/yaml_differential.rs` checks that agreement.
 //!
-//! Known, deliberate differences from the default implementation are listed in `NOTICE.md`.
+//! Known, deliberate differences from `yaml-saphyr` are listed in `NOTICE.md`.
 
 mod emit;
 mod scalar;

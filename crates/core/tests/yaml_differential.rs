@@ -1,8 +1,8 @@
-//! Differential tests: the `yaml-lean` layer must agree with the default `serde-saphyr` based
-//! implementation. The default implementation is the reference, so a failure here means the lean
-//! parser or emitter drifted from it.
+//! Differential tests: the default `yaml-lean` layer must agree with the `serde-saphyr` based
+//! implementation. `serde-saphyr` is the reference, so a failure here means the lean parser or
+//! emitter drifted from it.
 //!
-//! Needs both implementations compiled in: `cargo test -p openapiv3-filter-core --features yaml-lean`.
+//! Needs both implementations compiled in: `cargo test -p openapiv3-filter-core --features yaml-saphyr`.
 //!
 //! * parsing: both succeed with the same value *in the same key order*, or both fail.
 //! * emitting: byte-identical output.

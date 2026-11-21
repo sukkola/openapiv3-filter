@@ -11,20 +11,25 @@
 | `emit.rs` | `src/ser/quoting.rs`, `src/ser/wrapping.rs`, `serialize_str` / layout rules in `src/ser/serializer.rs`, `src/ser/zmij_format.rs` |
 
 The adaptation drops everything the filter does not need (serde integration, readers, snippet
-diagnostics, locations, includes, properties, comments) and keeps the *behaviour* the default `yaml-saphyr`
+diagnostics, locations, includes, properties, comments) and keeps the *behaviour* the `yaml-saphyr`
 implementation (`src/yaml/saphyr.rs`) gets from its serde-saphyr configuration: YAML 1.2 core booleans only,
-`<<` as an ordinary key, duplicate keys rejected, non-finite floats rejected, and the default implementation's
+`<<` as an ordinary key, duplicate keys rejected, non-finite floats rejected, and `yaml-saphyr`'s
 output styling (quoting, literal/folded block scalars, compact lists). `crates/core/tests/yaml_differential.rs`
-runs the default implementation side by side with this one to keep them in agreement.
+runs `yaml-saphyr` side by side with this one to keep them in agreement.
 
-## Deliberate differences from the default implementation
+## Deliberate differences from `yaml-saphyr`
 
 * Syntax errors are reported with the parser's own message and position (`yaml-saphyr` mode surfaces a
   misleading JSON error such as "expected value at line 1 column 1" for invalid YAML, via `Error::Malformed`;
   here it is `Error::MalformedYaml`).
 * `!!binary` scalars are rejected (`yaml-saphyr` base64-decodes them to text).
-* A scalar document followed by something that is not a document (`1\n: v`) is a syntax error here;
-  `yaml-saphyr` stops reading after the first value. OpenAPI documents are mappings, where both reject it.
+* A root scalar or flow collection followed by something that is not a document (`1\n: v`,
+  `{a: 1}\nb: 2`) is a syntax error here, as YAML requires; `yaml-saphyr` stops reading after the first
+  value and silently drops the rest.
+* Malformed text after an explicit `...` document end is a syntax error; `yaml-saphyr` ignores it.
+* Mapping keys are compared as the strings they resolve to: `!t a: 1` next to `a: 2` is a duplicate key
+  here (`yaml-saphyr` keeps both and the second overwrites the first), while number-like keys written
+  differently (`0x70` and `0x070`) are not (`yaml-saphyr` compares the numbers).
 * Alias limits are approximated (anchors, aliases, replayed nodes, alias/anchor ratio) at the
   serde-saphyr defaults rather than counted event by event.
 
@@ -32,8 +37,8 @@ runs the default implementation side by side with this one to keep them in agree
 
 These files are a fork of ~700 lines. To re-sync with a newer serde-saphyr, diff the files in the
 table against the new release, bump `serde-saphyr` and run
-`cargo test -p openapiv3-filter-core --features yaml-lean --test yaml_differential` (also with
-`YAML_DIFF_DIR` pointing at large real-world specs). A divergence from the default implementation
+`cargo test -p openapiv3-filter-core --features yaml-saphyr --test yaml_differential` (also with
+`YAML_DIFF_DIR` pointing at large real-world specs). A divergence from `yaml-saphyr`
 shows up there first. Ownership: this repository (licensed MIT OR Apache-2.0 like the rest of it);
 the upstream attribution below must stay with the files.
 

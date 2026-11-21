@@ -4,7 +4,7 @@
 //! `deserialize_any` in `src/de/deserializer.rs`) by the serde-saphyr authors
 //! (<https://github.com/bourumir-wyngs/serde-saphyr>), MIT OR Apache-2.0; see `NOTICE.md`. The
 //! rules are the ones `yaml/saphyr.rs` configures (`strict_booleans`, no legacy octals,
-//! non-finite floats rejected) so parsing agrees with the default implementation value for value.
+//! non-finite floats rejected) so parsing agrees with serde-saphyr value for value.
 
 use std::borrow::Cow;
 
