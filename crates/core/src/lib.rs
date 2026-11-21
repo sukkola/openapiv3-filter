@@ -11,12 +11,12 @@
 //! YAML is read and written by one of two interchangeable implementations, selected with Cargo
 //! features (see the [`yaml`] module for details):
 //!
-//! * `yaml-saphyr` (default): [`serde-saphyr`](https://crates.io/crates/serde-saphyr). Used by the
-//!   CLI; reports syntax errors as [`Error::Malformed`].
-//! * `yaml-lean`: a small in-crate layer on top of `granit-parser` that only handles
-//!   `serde_json::Value`. It roughly halves the size of a `wasm32` build and reports syntax errors
-//!   as [`Error::MalformedYaml`]. Depend on the crate with
-//!   `default-features = false, features = ["yaml-lean"]` to avoid linking `serde-saphyr`.
+//! * `yaml-lean` (default): a small in-crate layer on top of `granit-parser` that only handles
+//!   `serde_json::Value`. Used by the CLI; about twice as fast as `serde-saphyr`, roughly halves
+//!   the size of a `wasm32` build, and reports syntax errors as [`Error::MalformedYaml`].
+//! * `yaml-saphyr`: [`serde-saphyr`](https://crates.io/crates/serde-saphyr), the reference the
+//!   differential tests compare against; reports syntax errors as [`Error::Malformed`]. Depend
+//!   on the crate with `default-features = false, features = ["yaml-saphyr"]` to use it.
 //!
 //! # Example
 //!

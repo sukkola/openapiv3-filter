@@ -39,17 +39,17 @@ jobs:
         run: cross build -p openapiv3-filter --target ${{ matrix.target }} --release
       - name: Run tests
         run: cross test --workspace --target ${{ matrix.target }} --release
-      - name: Lint (yaml-lean only)
-        run: cargo clippy -p openapiv3-filter-core --no-default-features --features yaml-lean --all-targets
-      - name: Test (yaml-lean only, plus differential tests against yaml-saphyr)
+      - name: Lint (yaml-saphyr only)
+        run: cargo clippy -p openapiv3-filter-core --no-default-features --features yaml-saphyr --all-targets
+      - name: Test (yaml-saphyr only, plus differential tests of yaml-lean against it)
         run: |
-          cargo test -p openapiv3-filter-core --no-default-features --features yaml-lean
-          cargo test -p openapiv3-filter-core --features yaml-lean
+          cargo test -p openapiv3-filter-core --no-default-features --features yaml-saphyr
+          cargo test -p openapiv3-filter-core --features yaml-saphyr
       - name: Check wasm32 build (both YAML implementations)
         run: |
           rustup target add wasm32-unknown-unknown
           cargo check -p openapiv3-filter-core --target wasm32-unknown-unknown
-          cargo check -p openapiv3-filter-core --no-default-features --features yaml-lean --target wasm32-unknown-unknown
+          cargo check -p openapiv3-filter-core --no-default-features --features yaml-saphyr --target wasm32-unknown-unknown
       - name: Check test coverage
         # Minimum line coverage for crates/core/src/parser.rs,
         # crates/core/src/filter/openapi.rs, and crates/core/src/filter/content/* (the
@@ -58,10 +58,8 @@ jobs:
         # below the ~98-100% currently achieved per file so incidental variance doesn't
         # flake the build, while still catching a real coverage regression.
         #
-        # --features yaml-lean (default-features still on, so yaml-saphyr stays enabled too)
-        # is required for this to measure crates/core/src/yaml/lean/* at all: that module is
-        # compiled out entirely without the feature, and most of its own coverage comes from
-        # tests/yaml_differential.rs, which only runs (and only compiles) when both YAML
-        # features are enabled together — yaml-lean alone, without yaml-saphyr, does not
-        # exercise it anywhere near as thoroughly.
-        run: cargo llvm-cov --workspace --features yaml-lean --summary-only --fail-under-file-lines 90
+        # --features yaml-saphyr (default-features still on, so yaml-lean stays enabled too):
+        # most of crates/core/src/yaml/lean/*'s coverage comes from tests/yaml_differential.rs,
+        # which only runs (and only compiles) when both YAML features are enabled together —
+        # yaml-lean alone does not exercise it anywhere near as thoroughly.
+        run: cargo llvm-cov --workspace --features openapiv3-filter-core/yaml-saphyr --summary-only --fail-under-file-lines 90

@@ -4,22 +4,23 @@
 //!
 //! | feature                | implementation                                             | notes |
 //! |------------------------|------------------------------------------------------------|-------|
-//! | `yaml-saphyr` (default) | [`serde-saphyr`](https://crates.io/crates/serde-saphyr)   | full serde integration, rendered syntax-error snippets |
-//! | `yaml-lean`            | `lean` (in this crate, on top of `granit-parser`)         | `Value` only, roughly half the wasm size |
+//! | `yaml-lean` (default)  | `lean` (in this crate, on top of `granit-parser`)         | `Value` only, roughly half the wasm size, about twice as fast |
+//! | `yaml-saphyr`          | [`serde-saphyr`](https://crates.io/crates/serde-saphyr)   | full serde integration, rendered syntax-error snippets |
 //!
 //! At least one of the two must be enabled. Cargo features are additive, so when both are enabled
-//! (the default features plus `yaml-lean`) the lean implementation is the one used by
+//! (the default features plus `yaml-saphyr`) the lean implementation is the one used by
 //! [`parse_value`] and [`value_to_string`]; the generic `from_str` / `to_string` only exist with
-//! `yaml-saphyr`. To get a build that does not link `serde-saphyr` at all, depend on this crate
-//! with `default-features = false, features = ["yaml-lean"]`.
+//! `yaml-saphyr`. To use `serde-saphyr` instead, depend on this crate with
+//! `default-features = false, features = ["yaml-saphyr"]`.
 //!
-//! The lean implementation reads and writes the same documents as the default one; its
-//! deliberate differences are listed in `src/yaml/lean/NOTICE.md` and pinned by tests:
+//! The lean implementation reads and writes the same documents as `serde-saphyr`, which the
+//! differential tests use as the reference; its deliberate differences are listed in `src/yaml/lean/NOTICE.md` and pinned by tests:
 //!
 //! * syntax errors carry the parser's own message and position ([`Error::MalformedYaml`]
 //!   instead of a JSON error),
 //! * `!!binary` scalars are rejected,
-//! * a scalar document followed by something that is not a document is a syntax error,
+//! * a root scalar or flow collection followed by something that is not a document is a syntax
+//!   error, as YAML requires (serde-saphyr reads `{a: 1}\nb: 2` as `{a: 1}` and drops the rest),
 //! * malformed text after an explicit `...` document end is a syntax error (serde-saphyr
 //!   ignores it),
 //! * keys are compared as the strings they resolve to, so `!t a: 1` next to `a: 2` is a

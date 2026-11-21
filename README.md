@@ -108,23 +108,23 @@ Add it as a path/git dependency, or once published, from crates.io:
 openapiv3-filter-core = "0.1"
 ```
 
-YAML is read and written by `serde-saphyr` by default. Size-sensitive builds (notably
-`wasm32-unknown-unknown`) can switch to a small in-crate YAML layer, which roughly halves the wasm
-module, with `default-features = false, features = ["yaml-lean"]`:
+YAML is read and written by a small in-crate layer (`yaml-lean`) by default. It is about twice as
+fast as `serde-saphyr` and roughly halves a wasm module. `serde-saphyr` remains available, and is
+the reference the differential tests compare against:
 
 ```toml
 [dependencies]
-openapiv3-filter-core = { version = "0.1", default-features = false, features = ["yaml-lean"] }
+openapiv3-filter-core = { version = "0.1", default-features = false, features = ["yaml-saphyr"] }
 ```
 
 | feature | YAML implementation | syntax errors | notes |
 |---------|---------------------|---------------|-------|
-| `yaml-saphyr` (default) | `serde-saphyr` | `Error::Malformed` (JSON error) | used by the CLI |
-| `yaml-lean` | in-crate layer on `granit-parser` (`crates/core/src/yaml/lean`) | `Error::MalformedYaml` (parser message and position) | `!!binary` rejected, alias limits approximated; see its `NOTICE.md` |
+| `yaml-lean` (default) | in-crate layer on `granit-parser` (`crates/core/src/yaml/lean`) | `Error::MalformedYaml` (parser message and position) | used by the CLI; `!!binary` rejected, alias limits approximated; see its `NOTICE.md` |
+| `yaml-saphyr` | `serde-saphyr` | `Error::Malformed` (JSON error) | reference implementation |
 
 Both read and write the same documents (checked by differential tests); at least one feature must
 be enabled and, because Cargo features are additive, `yaml-lean` wins when both are on. The CLI
-always uses the default `yaml-saphyr`.
+uses the default `yaml-lean`.
 
 ## Repository layout
 
@@ -138,14 +138,14 @@ This repository is a Cargo workspace with two members:
 
 ## Development
 
-Run the full workspace test suite with `cargo test --workspace`. The lean YAML layer is tested
-separately, alone and against the default implementation:
+Run the full workspace test suite with `cargo test --workspace`. The lean YAML layer is also
+tested against `serde-saphyr`, and `serde-saphyr` alone:
 
 ```sh
-cargo test -p openapiv3-filter-core --no-default-features --features yaml-lean
-cargo test -p openapiv3-filter-core --features yaml-lean --test yaml_differential
+cargo test -p openapiv3-filter-core --features yaml-saphyr --test yaml_differential
+cargo test -p openapiv3-filter-core --no-default-features --features yaml-saphyr
 # optionally also compare large real-world documents (.yaml/.yml/.json):
-YAML_DIFF_DIR=/path/to/specs cargo test -p openapiv3-filter-core --features yaml-lean --release
+YAML_DIFF_DIR=/path/to/specs cargo test -p openapiv3-filter-core --features yaml-saphyr --release
 ```
  Snapshot tests use
 [`insta`](https://insta.rs/); after an intentional output change, review and accept with

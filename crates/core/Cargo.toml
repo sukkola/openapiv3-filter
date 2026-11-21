@@ -7,8 +7,9 @@ description = "OpenAPI 3.0/3.1 parsing and reference-closure filtering engine, w
 
 [features]
 # Which YAML implementation to use. At least one is required; if both are enabled `yaml-lean`
-# is the one used by `yaml::parse_value` / `yaml::value_to_string`.
-default = ["yaml-saphyr"]
+# is the one used by `yaml::parse_value` / `yaml::value_to_string`. `yaml-saphyr` is kept as the
+# reference implementation the differential tests compare against.
+default = ["yaml-lean"]
 yaml-saphyr = ["dep:serde-saphyr"]
 yaml-lean = ["dep:granit-parser", "dep:zmij"]
 
