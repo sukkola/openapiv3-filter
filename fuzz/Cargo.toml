@@ -1,0 +1,49 @@
+[package]
+name = "openapiv3-filter-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
+# Both YAML implementations, so the lean one can be checked against serde-saphyr.
+openapiv3-filter-core = { path = "../crates/core", features = ["yaml-saphyr", "yaml-lean"] }
+
+# Not part of the main workspace: fuzzing needs a nightly toolchain and cargo-fuzz.
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "parse"
+path = "fuzz_targets/parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "yaml_differential"
+path = "fuzz_targets/yaml_differential.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "yaml_emit"
+path = "fuzz_targets/yaml_emit.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "filter"
+path = "fuzz_targets/filter.rs"
+test = false
+doc = false
+bench = false

@@ -20,6 +20,12 @@
 //!   instead of a JSON error),
 //! * `!!binary` scalars are rejected,
 //! * a scalar document followed by something that is not a document is a syntax error,
+//! * malformed text after an explicit `...` document end is a syntax error (serde-saphyr
+//!   ignores it),
+//! * keys are compared as the strings they resolve to, so `!t a: 1` next to `a: 2` is a
+//!   duplicate key (serde-saphyr keeps both, and the second overwrites the first), while
+//!   number-like keys written differently (`0x70` and `0x070`) are not (serde-saphyr compares
+//!   the numbers and reports a duplicate),
 //! * alias limits are approximated rather than counted event by event.
 //!
 //! [`Error::MalformedYaml`]: crate::Error::MalformedYaml
