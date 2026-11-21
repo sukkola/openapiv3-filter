@@ -140,12 +140,12 @@ fn long_text(rng: &mut Rng) -> String {
     let mut s = String::new();
     for i in 0..n {
         if i > 0 {
-            s.push_str(rng.pick(&[" ", " ", " ", "  ", "   "]));
+            s.push_str(rng.pick::<&str>(&[" ", " ", " ", "  ", "   "]));
             if rng.below(30) == 0 {
                 s.push('\n');
             }
         }
-        s.push_str(rng.pick(&words));
+        s.push_str(rng.pick::<&str>(&words));
     }
     if rng.below(5) == 0 {
         s.push('\n');

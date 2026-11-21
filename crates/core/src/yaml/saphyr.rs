@@ -24,6 +24,10 @@ const MAX_DEPTH: usize = 128;
 /// Generous caps sized for multi-megabyte API descriptions.
 const MAX_EVENTS: usize = 200_000_000;
 const MAX_NODES: usize = 50_000_000;
+/// Comments are buffered while the parser looks for the next collection entry, and the default
+/// cap of 32 rejects a document with a longer run of comment lines (a commented-out block). The
+/// total size of comment text stays capped by the default `max_total_comment_bytes`.
+const MAX_BUFFERED_COMMENTS: usize = 10_000_000;
 
 fn options() -> Options {
     // `Options` and `Budget` are `#[non_exhaustive]`: start from the defaults and assign fields.
@@ -31,6 +35,7 @@ fn options() -> Options {
     budget.max_depth = MAX_DEPTH;
     budget.max_events = MAX_EVENTS;
     budget.max_nodes = MAX_NODES;
+    budget.max_buffered_comment_events = MAX_BUFFERED_COMMENTS;
 
     let mut options = Options::default();
     options.strict_booleans = true;
@@ -53,6 +58,14 @@ pub fn to_string<T: Serialize>(value: &T) -> Result<String, serde_saphyr::Serial
 mod tests {
     use super::*;
     use serde_json::{Value, json};
+
+    #[test]
+    fn it_reads_long_runs_of_comment_lines() {
+        let comments = "  # commented out\n".repeat(1000);
+        let text = format!("paths:\n{comments}  /a: {{}}\n");
+        let value: Value = from_str(&text).unwrap();
+        assert_eq!(value, json!({ "paths": { "/a": {} } }));
+    }
 
     #[test]
     fn it_keeps_yaml_1_1_boolean_words_as_strings() {

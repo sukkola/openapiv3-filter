@@ -310,6 +310,11 @@ impl Selection {
             selection.select_container(doc, "paths", &filters.paths, &allowed_methods);
         selection.webhooks =
             selection.select_container(doc, "webhooks", &filters.webhooks, &allowed_methods);
+        // The root `security` is kept as it is (it is the default for every operation without
+        // its own), so every scheme it names must stay declared.
+        selection
+            .kept_securities
+            .extend(reference_collector::operation_security_names(doc));
         selection
     }
 
@@ -383,7 +388,18 @@ impl Selection {
 
                 if item.get("$ref").is_some() {
                     // Wholesale keep: the reusable path item itself is filtered as a component,
-                    // not here.
+                    // not here. It is kept with every one of its operations, so every scheme
+                    // they name must stay declared.
+                    let operations = resolved
+                        .as_object()
+                        .into_iter()
+                        .flat_map(|obj| HTTP_METHODS.iter().filter_map(|method| obj.get(*method)))
+                        .collect();
+                    collect_operation_securities(
+                        operations,
+                        &mut self.kept_securities,
+                        &HashSet::new(),
+                    );
                     EntryDecision::Whole
                 } else {
                     EntryDecision::Methods(matching_ops.into_iter().map(|(m, _)| m).collect())
@@ -1127,6 +1143,65 @@ mod tests {
 
         assert!(cloned.get("tags").is_none());
         assert!(cloned.get("security").is_none());
+    }
+
+    #[test]
+    fn it_keeps_the_security_schemes_the_root_security_names() {
+        let doc = json!({
+            "openapi": "3.1.0",
+            "paths": {
+                "/inherits": { "get": { "responses": {} } },
+                "/own": { "get": { "security": [{ "own": [] }], "responses": {} } }
+            },
+            "components": {
+                "securitySchemes": { "root": {}, "own": {}, "unused": {} }
+            },
+            "security": [{ "root": [] }]
+        });
+
+        for filtered in [
+            doc.filter_by_parameters(FilteringParameters::default()),
+            doc.filter_by_parameters(FilteringParameters {
+                paths: Some(vec![String::from("/inherits")]),
+                ..Default::default()
+            }),
+            doc.filter_by_parameters(FilteringParameters {
+                security: Some(vec![String::from("own")]),
+                ..Default::default()
+            }),
+        ] {
+            assert_eq!(filtered["security"], json!([{ "root": [] }]));
+            assert!(filtered.pointer("/components/securitySchemes/root").is_some());
+            assert!(filtered.pointer("/components/securitySchemes/unused").is_none());
+        }
+    }
+
+    #[test]
+    fn it_keeps_the_security_schemes_of_every_operation_of_a_kept_reusable_path_item() {
+        let doc = json!({
+            "openapi": "3.1.0",
+            "paths": { "/shared": { "$ref": "#/components/pathItems/Shared" } },
+            "components": {
+                "pathItems": {
+                    "Shared": {
+                        "get": { "security": [{ "a": [] }], "responses": {} },
+                        "post": { "security": [{ "b": [] }], "responses": {} }
+                    }
+                },
+                "securitySchemes": { "a": {}, "b": {}, "unused": {} }
+            }
+        });
+
+        let filtered = doc.filter_by_parameters(FilteringParameters {
+            methods: Some(vec![String::from("get")]),
+            ..Default::default()
+        });
+
+        // The path item is kept whole, `post` included, so `b` is still required.
+        assert!(filtered.pointer("/components/pathItems/Shared/post").is_some());
+        assert!(filtered.pointer("/components/securitySchemes/a").is_some());
+        assert!(filtered.pointer("/components/securitySchemes/b").is_some());
+        assert!(filtered.pointer("/components/securitySchemes/unused").is_none());
     }
 
     /// A document exercising the corners where moving and copying could disagree: key order
